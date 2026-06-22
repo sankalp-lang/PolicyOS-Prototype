@@ -33,7 +33,7 @@ App.registerView('connectors', {
       const action = live
         ? `<span class="muted" style="font-size:12px">via ${App.esc(String(st.method).toUpperCase())}</span> <button class="btn btn--sm" onclick="App.conn.openSetup('${c.id}')">${App.icon('edit')} Manage</button>`
         : `<button class="btn btn--sm btn--primary" onclick="App.conn.openSetup('${c.id}')">${App.icon('plug')} Connect</button>`;
-      const extra = c.id==='keka' && live ? `<button class="btn btn--sm" onclick="App.navigate('directory')">View directory</button>` : '';
+      const extra = c.id==='keka' && live ? `<button class="btn btn--sm" onclick="App.navigate('usersaccess')">View directory</button>` : '';
       return `<div class="card card--pad">
         <div class="row gap-12" style="margin-bottom:10px">${App.conn.logo(c.id,34)}
           <div style="flex:1"><div style="font-weight:600;font-size:14px">${App.esc(c.name)}</div><div class="muted" style="font-size:12px">${App.esc(c.kind)}</div></div>

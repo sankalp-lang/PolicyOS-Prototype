@@ -86,14 +86,19 @@
     clear() { llmStore.set({}); LLM.refreshBadges(); },
 
     buildContext(user) {
+      const ent = App.edition && App.edition() === 'enterprise';
       const canComp = App.canSeeComp(user);
-      const people = DB.employees.map(e => { let s = '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence); if (canComp && DB.compensation[e.id]) s += ' | compensation: ' + DB.compensation[e.id]; return s; }).join('\n');
-      const teams = DB.teams.map(t => '- ' + t.name + ' (lead ' + t.lead + ', ' + DB.employees.filter(e => e.team === t.name).length + ')').join('\n');
-      const jira = DB.jiraIssues.map(i => '- ' + i.key + ' | ' + i.title + ' | assignee ' + App.emp(i.assignee).name + ' | ' + ((DB.jiraProjects.find(p => p.key === i.project) || {}).name) + ' | ' + i.status).join('\n');
       const vis = App.visiblePolicies(user);
       const pol = vis.map(p => '### ' + p.name + ' (' + p.version + ', ' + p.category + ')\n' + p.summary + '\nKey parameters: ' + Object.entries(p.facts).map(([k, v]) => k + ': ' + v).join('; ') + '\nRules: ' + p.rules.join(' | ')).join('\n\n');
       const hidden = DB.policies.length - vis.length;
-      return 'COMPANY: ' + DB.company.name + '\n\n## PEOPLE (Keka HRMS)\n' + people + '\n\n## TEAMS\n' + teams + '\n\n## WORK IN PROGRESS (Jira)\n' + jira + '\n\n## POLICIES THIS USER MAY ACCESS (PolicyOS) — ' + vis.length + ' of ' + DB.policies.length + '\n' + (pol || '(none in scope)') + '\n\n[' + hidden + ' other policies exist but are OUTSIDE this user\'s scope and are not included.]' + (canComp ? '' : '\n[Compensation NOT included — user not permitted.]');
+      const polBlock = '## POLICIES THIS USER MAY ACCESS (PolicyOS) — ' + vis.length + ' of ' + DB.policies.length + '\n' + (pol || '(none in scope)') + '\n\n[' + hidden + ' other policies exist but are OUTSIDE this user\'s scope and are not included.]';
+      if (ent) {
+        return 'COMPANY: ' + DB.company.name + '\n\n' + polBlock + '\n\n[On-prem PolicyOS edition: connected sources (HRMS, Jira, Notion) are not part of this deployment — answer from policies only.]';
+      }
+      const people = DB.employees.map(e => { let s = '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence); if (canComp && DB.compensation[e.id]) s += ' | compensation: ' + DB.compensation[e.id]; return s; }).join('\n');
+      const teams = DB.teams.map(t => '- ' + t.name + ' (lead ' + t.lead + ', ' + DB.employees.filter(e => e.team === t.name).length + ')').join('\n');
+      const jira = DB.jiraIssues.map(i => '- ' + i.key + ' | ' + i.title + ' | assignee ' + App.emp(i.assignee).name + ' | ' + ((DB.jiraProjects.find(p => p.key === i.project) || {}).name) + ' | ' + i.status).join('\n');
+      return 'COMPANY: ' + DB.company.name + '\n\n## PEOPLE (Keka HRMS)\n' + people + '\n\n## TEAMS\n' + teams + '\n\n## WORK IN PROGRESS (Jira)\n' + jira + '\n\n' + polBlock + (canComp ? '' : '\n[Compensation NOT included — user not permitted.]');
     },
     systemPrompt(user) {
       return 'You are Tara, the on-prem company copilot for ' + DB.company.name + ', answering for ' + user.name + ' (' + DB.roleLabels[user.role] + ', ' + user.team + ').\nRULES: Answer ONLY from the CONTEXT below — it is already filtered to what THIS user may see. If something is absent (a policy, person, or salary), say the user is not permitted to see it; never guess or use outside knowledge. Be concise; bold key values like **720**. End with a final line "SOURCES: <subset of HRMS, Jira, Policies>" (omit if none).\n\nCONTEXT:\n' + LLM.buildContext(user);

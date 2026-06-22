@@ -122,10 +122,9 @@ window.DB = (function () {
 
   /* ---------- Policy categories ---------- */
   const categories = [
-    { name:'Lending',    subs:['Personal Loan','Two-Wheeler','MSME','Home Loan','Collections'], color:'#4f46e5', enabled:true },
-    { name:'Compliance', subs:['KYC / AML','Information Security'],                              color:'#0891b2', enabled:true },
-    { name:'HR',         subs:['Leave','Compensation','Travel & Expense'],                       color:'#db2777', enabled:true },
-    { name:'Others',     subs:['General'],                                                       color:'#64748b', enabled:true }
+    { name:'Lending',    subs:['Personal Loan','Two-Wheeler','MSME','Home Loan','Collections'], color:'#2f49c4', enabled:true },
+    { name:'HR',         subs:['Leave','Compensation','Travel & Expense'],                       color:'#5e4d83', enabled:true },
+    { name:'Compliance', subs:['KYC / AML','Information Security','Regulatory Updates'],          color:'#3a7479', enabled:true }
   ];
 
   /* ---------- Policies (with permission-faithful access rules) ----------
@@ -265,7 +264,54 @@ window.DB = (function () {
 
   const company = { name:'Tartan HQ', workspace:'TartanHQ', llm:'Bring-your-own (currently: Claude · on-prem gateway)' };
 
+  /* ---------- Simulator: numeric eligibility knobs per credit/origination policy ---------- */
+  const simParams = {
+    'P-PL':   { minCibil:700, minAge:23, maxAge:58, maxFoir:0.55 },
+    'P-2W':   { minCibil:680, minAge:21, maxAge:60, maxLtv:0.90 },
+    'P-MSME': { minAge:27 },
+    'P-HL':   { minCibil:720, minAge:25, maxAge:65, maxLtv:0.80 }
+  };
+
+  /* ---------- Anonymized synthetic test cohort (deterministic; no PII) ---------- */
+  const testBase = (function () {
+    let s = 987654321;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    const rows = [];
+    for (let i = 0; i < 220; i++) {
+      const cibil = 600 + Math.floor(rnd() * 261);            // 600–860
+      const age = 21 + Math.floor(rnd() * 45);                // 21–65
+      const foir = Math.round(28 + rnd() * 47) / 100;         // 0.28–0.75
+      const ltv = Math.round(60 + rnd() * 35) / 100;          // 0.60–0.95
+      const income = 15000 + Math.floor(rnd() * 120000);
+      const risk = (720 - cibil) / 140 + (foir - 0.5) * 1.2;  // lower CIBIL / higher FOIR → riskier
+      const defaulted = rnd() < Math.max(0.01, Math.min(0.55, 0.07 + risk * 0.10));
+      rows.push({ id: 'APP' + (1001 + i), cibil, age, foir, ltv, income, defaulted });
+    }
+    return rows;
+  })();
+
+  /* ---------- Regulatory feed (Compliance › Regulatory Updates) ---------- */
+  const circulars = [
+    { id:'CIR-36', regulator:'RBI', ref:'RBI/2026-27/36', title:'Higher provisioning on unsecured retail exposure', date:'09 May 2026', status:'New',
+      affects:'P-PL', field:'Minimum CIBIL score', current:'700', mandated:'720',
+      summary:'Revised risk-weights raise capital cost on sub-720 unsecured retail. Aligning the bureau cutoff reduces capital drag and early-bucket delinquency.',
+      suggestion:'Raise the Personal Loan minimum CIBIL cutoff from 700 to 720 to align with the revised risk-weights.',
+      simOverride:{ minCibil:720 } },
+    { id:'CIR-41', regulator:'RBI', ref:'RBI/2026-27/41', title:'Periodic KYC updation — revised timelines', date:'02 Jun 2026', status:'New',
+      affects:'P-KYC', field:'Re-KYC cycle (high-risk)', current:'2 years', mandated:'1 year',
+      summary:'High-risk customers must undergo periodic KYC updation at least once every 12 months (previously 24).',
+      suggestion:'Tighten the high-risk Re-KYC cycle in the KYC & AML Policy from 2 years to 1 year.', simOverride:null },
+    { id:'CIR-39', regulator:'RBI', ref:'RBI/2026-27/39', title:'Digital lending — cooling-off period', date:'21 May 2026', status:'Reviewed',
+      affects:'P-PL', field:'Cooling-off / look-up period', current:'Not specified', mandated:'3 days',
+      summary:'Borrowers must get a 3-day cooling-off window to exit a digital loan without penalty.',
+      suggestion:'Add a 3-day cooling-off clause to the Personal Loan Credit Policy disbursal section.', simOverride:null },
+    { id:'SEBI-12', regulator:'SEBI', ref:'SEBI/HO/2026/12', title:'Outsourcing of regulated activities', date:'28 Apr 2026', status:'No gap',
+      affects:'P-ISEC', field:'Vendor access review', current:'Annual', mandated:'Annual',
+      summary:'Periodic review of outsourced/vendor access. Your Information Security Policy already satisfies this.',
+      suggestion:null, simOverride:null }
+  ];
+
   return { employees, compensation, teams, jiraProjects, jiraIssues, categories, policies,
            users, roleLabels, workflows, approvals, assessments, insights, rejectionReasons,
-           connectors, company };
+           connectors, company, simParams, testBase, circulars };
 })();

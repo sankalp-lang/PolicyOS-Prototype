@@ -39,10 +39,10 @@ var rd = (typeof readFile !== 'undefined') ? readFile : read;
 function load(p){ try { (0, eval)(rd(p)); return null; } catch(e){ return p + ' :: ' + e; } }
 
 var loadErrors = [];
-['data.js','core.js','llm.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
+['data.js','core.js','llm.js','sim.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
 
-var viewFiles = ['dashboard','copilot','policies','directory','access','polygpt','rulesense',
-  'approvals','usermgmt','category','bredecoder','insightgen','assessments','connectors'];
+var viewFiles = ['dashboard','copilot','policies','directory','access','usersaccess','polygpt','rulesense',
+  'approvals','regulatory','usermgmt','category','bredecoder','insightgen','assessments','connectors'];
 viewFiles.forEach(function(v){ var e=load('views/'+v+'.js'); if(e) loadErrors.push('LOAD '+e); });
 
 if (loadErrors.length) { print('LOAD ERRORS:\n' + loadErrors.join('\n')); throw 'stop'; }
@@ -109,9 +109,69 @@ chk(typeof App.signIn==='function' && typeof App.doSignIn==='function' && typeof
 var bootErr=null; try { App.boot(); } catch(e){ bootErr=e; } chk(!bootErr, 'Landing (multi-section) renders without throwing: '+(bootErr||''));
 var nm = App.navModel(admin);
 chk(nm.pinned && nm.groups && nm.groups.length>=3, 'Sidebar: pinned items + collapsible groups');
-chk(nm.groups.some(g=>g.title==='Administration' && g.items.some(i=>i.id==='directory') && g.items.some(i=>i.id==='access') && g.items.some(i=>i.id==='usermgmt')), 'Sidebar: People Directory + Access Control + User Management merged into Administration');
+chk(nm.groups.some(g=>g.title==='Administration' && g.items.some(i=>i.id==='usersaccess')) && !nm.groups.some(g=>g.items.some(i=>['directory','access','usermgmt'].indexOf(i.id)>=0)), 'Sidebar: People Directory + Access Control + User Management merged into one "Users & access"');
 chk(typeof App.toggleSidebar==='function' && typeof App.renderNav==='function' && typeof App.playScene==='function' && App.scene && App.scene.boundary && App.scene.insight && App.scene.connect, 'Sidebar toggle + renderNav + 3 animated scenes present');
 var cmdErr=null; try { App.cmd.items(); } catch(e){ cmdErr=e; } chk(!cmdErr, 'Command palette works with new nav shape: '+(cmdErr||''));
+
+// Category disable hides policies everywhere (visiblePolicies + Tara)
+var hrCat = DB.categories.find(function(c){return c.name==='HR';});
+chk(!!hrCat, 'Categories: HR present (only Lending/HR/Compliance)');
+chk(!DB.categories.some(function(c){return c.name==='Others';}), 'Categories: Others removed');
+hrCat.enabled = false;
+chk(!App.visiblePolicies(admin).some(function(p){return p.id==='P-LEAVE';}), 'Category disable: HR policies vanish from visiblePolicies');
+var leaveAns = App.askTara("what's the leave policy", admin);
+chk(!/privilege leave|18 \/ yr/i.test(leaveAns.html), 'Category disable: Tara no longer answers the disabled HR leave policy');
+hrCat.enabled = true;
+chk(App.visiblePolicies(admin).some(function(p){return p.id==='P-LEAVE';}), 'Category re-enable: HR leave policy returns');
+
+// Edition gating: Enterprise (on-prem) = policies only, no connectors/company-brain
+try { localStorage.setItem('tara_edition','enterprise'); } catch(e){}
+var entPeople = App.askTara("who's in the engineering team", admin);
+chk(!(entPeople.sources||[]).some(function(s){return s.kind==='hrms';}), 'Enterprise: people query NOT answered from HRMS');
+var entJira = App.askTara('who is working on policyos', admin);
+chk(!(entJira.sources||[]).some(function(s){return s.kind==='jira';}), 'Enterprise: work query NOT answered from Jira');
+var entPol = App.askTara('personal loan eligibility criteria', admin);
+chk(/700|cibil/i.test(entPol.html), 'Enterprise: policy query still works');
+var entCtx = App.llm.buildContext(admin);
+chk(!/WORK IN PROGRESS/.test(entCtx) && /POLICIES/.test(entCtx), 'Enterprise: LLM context drops Jira, keeps policies');
+var entNav = App.navModel(admin);
+chk(!entNav.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Enterprise: Connectors hidden from nav');
+try { localStorage.setItem('tara_edition','standard'); } catch(e){}
+
+// Standard nav: admin-only Administration + Connectors; Assessments under Company Brain
+var navAdmin = App.navModel(admin), navPM = App.navModel(personas.find(function(p){return p.id==='THQ0101';}));
+chk(navAdmin.groups.some(function(g){return g.title==='Administration' && g.items.some(function(i){return i.id==='usersaccess';});}), 'Admin sees "Users & access" under Administration');
+chk(navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Admin (standard) sees Connectors');
+chk(!navPM.groups.some(function(g){return g.title==='Administration';}), 'Policy Manager does NOT see Administration');
+chk(!navPM.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Policy Manager does NOT see Connectors');
+chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='assessments';});}), 'Assessments lives under Company Brain');
+chk(!navAdmin.groups.some(function(g){return g.items.some(function(i){return ['directory','access','usermgmt'].indexOf(i.id)>=0;});}), 'Old directory/access/usermgmt removed from nav');
+
+// Feature 1 — Impact simulator
+chk(!!DB.simParams && !!DB.simParams['P-PL'] && DB.testBase && DB.testBase.length >= 100, 'Simulator: simParams + test cohort present');
+chk(typeof App.sim === 'object' && typeof App.sim.run === 'function', 'Simulator: App.sim engine present');
+var simBase = App.sim.run('P-PL', {});
+chk(simBase.applicable && simBase.flipped.length === 0 && simBase.gained.length === 0, 'Simulator: no override → no applicants flip');
+var simTight = App.sim.run('P-PL', { minCibil: 760 });
+chk(simTight.proposed.rate < simBase.base.rate && simTight.flipped.length > 0, 'Simulator: tightening CIBIL cutoff lowers approval rate + flips applicants');
+chk(simTight.proposed.npa <= simBase.base.npa + 1e-9, 'Simulator: tightening cutoff does not raise projected NPA');
+chk(App.sim.run('P-KYC', {}).applicable === false, 'Simulator: a non-credit policy is not simulable');
+chk(typeof App.simView === 'object' && typeof App.simView.open === 'function' && typeof App.simView.propose === 'function', 'Simulator: App.simView modal present');
+
+// Feature 2 — Regulatory radar
+chk(!!DB.circulars && DB.circulars.length >= 3, 'Regulatory: circular feed present');
+chk(DB.categories.find(function(c){return c.name==='Compliance';}).subs.indexOf('Regulatory Updates') >= 0, 'Regulatory: Compliance has the "Regulatory Updates" sub-category');
+chk(App.navModel(admin).groups.some(function(g){return g.items.some(function(i){return i.id==='regulatory';});}), 'Regulatory: nav item present under Policy Management');
+chk(typeof App.regulatoryView === 'object' && typeof App.regulatoryView.createChange === 'function', 'Regulatory: view + createChange present');
+var beforeN = DB.approvals.length; App.state.user = admin;
+App.regulatoryView.createChange('CIR-36');
+chk(DB.approvals.length === beforeN + 1 && /RBI/.test(DB.approvals[0].complianceFlag||'') && !!DB.approvals[0].impact, 'Regulatory: createChange raises an Approval with citation + projected impact');
+
+// Tara what-if hook routes to the simulator (RBAC-scoped)
+var simAns = App.askTara('what if we raise the personal loan cibil cutoff to 760', admin);
+chk(/approval rate|impact simulation/i.test(simAns.html), 'Tara: what-if query routes to impact simulation for admin');
+var simDenied = App.askTara('what if we raise the personal loan cibil cutoff to 760', staff);
+chk(!/approval rate|impact simulation/i.test(simDenied.html), 'Tara: staff (no PL access) does NOT get the simulation');
 
 print('=== RBAC semantics ===');
 print(semFails.length ? 'SEMANTIC FAILS:\n'+semFails.join('\n') : 'RBAC semantics OK (deny + allow paths verified)');

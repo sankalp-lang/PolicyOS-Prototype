@@ -225,6 +225,7 @@ App.rulesenseView = {
       <div class="row gap-8" style="flex-wrap:wrap">
         <button class="btn" onclick="App.rulesenseView.testLogic()">${App.icon('zap')} Test Logic</button>
         <button class="btn" onclick="App.rulesenseView.reviewVariables()">${App.icon('database')} Review Variables</button>
+        ${App.sim && App.sim.paramsFor(p.id) ? `<button class="btn" onclick="App.simView.open('${p.id}')">${App.icon('chart')} Simulate impact</button>` : ''}
         <div class="spacer" style="flex:1"></div>
         <button class="btn btn--primary" onclick="App.rulesenseView.initiateBre()">${App.icon('code')} Initiate BRE Update</button>
       </div>`;

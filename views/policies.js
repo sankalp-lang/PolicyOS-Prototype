@@ -25,7 +25,7 @@ App.registerView('policies', {
       ${hidden?`<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} polic${hidden>1?'ies are':'y is'} hidden</strong> — outside your role's access scope. Permission is enforced at retrieval, not hidden in the UI alone.</span></div>`:''}
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="polSearch" placeholder="Search policies…"/></div>
-        <select class="select" id="polCat"><option value="">All categories</option>${DB.categories.map(c=>`<option>${c.name}</option>`).join('')}</select>
+        <select class="select" id="polCat"><option value="">All categories</option>${App.enabledCats().map(c=>`<option>${c.name}</option>`).join('')}</select>
         <select class="select" id="polStatus"><option value="">All status</option><option>Active</option><option>Draft</option></select>
       </div>
       <div class="table-wrap"><table class="tbl"><thead><tr><th>Policy</th><th>Owner</th><th>Category</th><th>Version</th><th>Status</th><th>Updated</th></tr></thead><tbody id="polBody">${rows}</tbody></table></div>
@@ -64,6 +64,7 @@ App.policiesView = {
           </div>
         </div>`,
       footer: `<button class="btn" onclick="App.toast('Opening version compare (demo)')">${App.icon('layers')} Compare Versions</button>
+        ${App.sim && App.sim.paramsFor(p.id) ? `<button class="btn" onclick="App.closeModal();App.simView.open('${p.id}')">${App.icon('chart')} Simulate impact</button>` : ''}
         ${canRules?`<button class="btn btn--primary" onclick="App.closeModal();App.navigate('rulesense',{policy:'${p.id}'})">${App.icon('code')} View Rules</button>`:''}
         <button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('Tell me about ${p.name.replace(/'/g,"")}')">${App.icon('sparkles')} Ask Tara</button>`
     });
@@ -72,7 +73,7 @@ App.policiesView = {
     App.openModal({
       title:'Add New Policy', sub:'Upload a policy document and publish it to the repository.',
       body:`<div class="field"><label>Policy document <span class="req">*</span></label><div class="pdf-ph" style="min-height:auto;padding:24px;text-align:center;cursor:pointer">${App.icon('download')}<div class="muted" style="margin-top:8px;font-size:12.5px">Click to upload PDF (≤ 25 MB)</div></div></div>
-        <div class="grid grid-2"><div class="field"><label>Product Category <span class="req">*</span></label><select class="select" style="width:100%">${DB.categories.map(c=>`<option>${c.name}</option>`).join('')}</select></div>
+        <div class="grid grid-2"><div class="field"><label>Product Category <span class="req">*</span></label><select class="select" style="width:100%">${App.enabledCats().map(c=>`<option>${c.name}</option>`).join('')}</select></div>
         <div class="field"><label>Sub-category</label><select class="select" style="width:100%"><option>Personal Loan</option><option>MSME</option><option>Home Loan</option></select></div></div>
         <div class="field"><label>Policy Name <span class="req">*</span></label><input class="input" placeholder="e.g. Gold Loan Policy"/></div>
         <div class="field"><label>Description <span class="req">*</span></label><textarea class="textarea" placeholder="Short description…"></textarea></div>`,

@@ -39,7 +39,7 @@ App.registerView('category', {
         <button class="btn" onclick="App.categoryView.addSub()">${App.icon('plus')} Add Sub-Category</button>
         <button class="btn btn--primary" onclick="App.categoryView.add()">${App.icon('plus')} Add Category</button>
       </div>
-      <div class="info-banner">${App.icon('layers')} <span><strong>${DB.categories.length} categories</strong> · ${totalSubs} sub-categories in use. Disabling a category hides it from new-policy creation but keeps existing policies intact.</span></div>
+      <div class="info-banner">${App.icon('layers')} <span><strong>${DB.categories.length} categories</strong> · ${totalSubs} sub-categories in use. Disabling a category hides it and its policies everywhere — repository, filters, dropdowns and Tara — while keeping the underlying data intact.</span></div>
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="catSearch" placeholder="Search categories…"/></div>
       </div>
@@ -59,11 +59,10 @@ App.registerView('category', {
 
 App.categoryView = {
   toggle(btn, name) {
-    btn.classList.toggle('on');
-    const on = btn.classList.contains('on');
-    const card = btn.closest('.card');
-    if (card) card.style.opacity = on ? '' : '.6';
-    App.toast(`“${name}” ${on ? 'enabled' : 'disabled'} (demo)`, on ? 'ok' : 'warn');
+    const c = DB.categories.find(x => x.name === name); if (!c) return;
+    const now = c.enabled !== false; c.enabled = !now;
+    App.toast(`“${name}” ${c.enabled ? 'enabled — now visible' : 'disabled — hidden from filters, lists & Tara'}`, c.enabled ? 'ok' : 'warn');
+    App.reload();
   },
 
   add() {

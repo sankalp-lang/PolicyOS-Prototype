@@ -53,6 +53,35 @@ App.approvalsView = {
 
   setMode(m) { App.state.approvals = { mode: m }; App.reload(); },
 
+  /* projected impact of a change on the test cohort (reuses the simulator engine) */
+  impactBlock(a) {
+    const base = (a.policy && App.sim) ? App.sim.paramsFor(a.policy) : null;
+    const f = (a.change && a.change.field) || '', to = (a.change && a.change.to) || '';
+    let ov = null;
+    if (base) {
+      if (/cibil/i.test(f)) { const n = parseInt(to, 10); if (!isNaN(n)) ov = { minCibil: n }; }
+      else if (/ltv/i.test(f)) { const n = parseFloat(to); if (!isNaN(n)) ov = { maxLtv: n > 1 ? n / 100 : n }; }
+      else if (/foir/i.test(f)) { const n = parseFloat(to); if (!isNaN(n)) ov = { maxFoir: n > 1 ? n / 100 : n }; }
+    }
+    if (!ov) return a.impact ? this._impactStored(a.impact) : '';
+    const r = App.sim.run(a.policy, ov);
+    if (!r.applicable) return a.impact ? this._impactStored(a.impact) : '';
+    const pc = x => (x * 100).toFixed(1) + '%';
+    const dA = (r.proposed.rate - r.base.rate) * 100, dN = (r.proposed.npa - r.base.npa) * 100;
+    const pill = (d, goodDown) => { const flat = Math.abs(d) < 0.05; const good = goodDown ? d < 0 : d > 0; return App.ui.pill((d >= 0 ? '+' : '') + d.toFixed(1) + ' pts', flat ? 'gray' : (good ? 'green' : 'red')); };
+    const ovLit = '{' + Object.keys(ov).map(k => k + ':' + ov[k]).join(',') + '}';
+    return `<div class="divider"></div><b style="font-size:12.5px">Projected impact on the test cohort</b>
+      <div class="grid grid-3 mt-8">
+        <div class="kpi"><div class="kpi__label">Approval rate</div><div class="kpi__val" style="font-size:20px">${pc(r.base.rate)} → ${pc(r.proposed.rate)}</div><div class="kpi__sub">${pill(dA, false)}</div></div>
+        <div class="kpi"><div class="kpi__label">Projected NPA</div><div class="kpi__val" style="font-size:20px">${pc(r.base.npa)} → ${pc(r.proposed.npa)}</div><div class="kpi__sub">${pill(dN, true)}</div></div>
+        <div class="kpi"><div class="kpi__label">Applicants reclassified</div><div class="kpi__val" style="font-size:20px">${(r.flipped.length || r.gained.length)}</div><div class="kpi__sub muted">of ${r.total}</div></div>
+      </div>
+      <div class="row mt-12"><button class="btn btn--sm" onclick="App.closeModal();App.simView.open('${a.policy}',${ovLit})">${App.icon('chart')} Open in simulator</button></div>`;
+  },
+  _impactStored(im) {
+    return `<div class="info-banner" style="margin-top:14px;margin-bottom:0">${App.icon('chart')} <span><strong>Projected impact:</strong> approval ${App.esc(String(im.approvalDelta))} pts · NPA ${App.esc(String(im.npaDelta))} pts · ${App.esc(String(im.flipped))} applicants reclassified.</span></div>`;
+  },
+
   /* ---------- view: pending requests ---------- */
   renderRequests(u) {
     const reqs = this.visibleRequests(u);
@@ -196,7 +225,7 @@ App.approvalsView = {
     }
 
     const askName = (a.name || '').replace(/'/g, '');
-    const footer = `<button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('What is the impact of changing ${App.esc((a.change.field||'').replace(/'/g,''))} on the ${App.esc((p?p.name:'policy').replace(/'/g,''))}?')">${App.icon('sparkles')} Ask Tara about impact</button>
+    const footer = `<button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('What if we set ${App.esc((a.change.field||'').replace(/'/g,''))} to ${App.esc((a.change.to||'').replace(/'/g,''))} on the ${App.esc((p?p.name:'policy').replace(/'/g,''))}?')">${App.icon('sparkles')} Ask Tara about impact</button>
       <div class="spacer" style="flex:1"></div>`
       + (canAct
           ? `<button class="btn btn--danger" onclick="App.approvalsView.reject('${a.id}')">${App.icon('x')} Reject</button><button class="btn btn--primary" onclick="App.closeModal();App.toast('Approved · ${App.esc(a.id)} advanced to next level (demo)')">${App.icon('check')} Approve</button>`
@@ -207,7 +236,7 @@ App.approvalsView = {
       sub: a.id + ' · ' + a.type + ' · raised by ' + by.name + ' on ' + a.on,
       lg: true,
       body: `<div class="row gap-8" style="margin-bottom:14px;flex-wrap:wrap">${this.prioPill(a.priority)} ${App.ui.pill(a.status,'violet')} ${p?App.ui.pill(p.name+' · '+p.version,'gray'):''}</div>
-        ${diff}${rationale}${compliance}${levels}`,
+        ${diff}${rationale}${compliance}${this.impactBlock(a)}${levels}`,
       footer
     });
   },

@@ -35,7 +35,6 @@ App.registerView('polygpt', {
         <div style="width:54px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:4px">
           <button class="topbar__btn" title="New chat" onclick="App.polygptView.newChat()" style="background:var(--brand-600);border-color:var(--brand-600);color:#fff">${App.icon('plus')}</button>
           <button class="topbar__btn" title="History" onclick="App.polygptView.history()">${App.icon('clock')}</button>
-          <div class="divider" style="width:24px;margin:4px 0"></div>
           <button class="topbar__btn" title="Browse policies" onclick="App.navigate('policies')">${App.icon('file')}</button>
         </div>
 
@@ -58,7 +57,7 @@ App.registerView('polygpt', {
               <span class="spacer" style="flex:1"></span>
               <span class="muted" style="font-size:11.5px">Attach policies to ground every answer.</span>
             </div>
-            <div class="chat-inputwrap" style="border:none;padding:0">
+            <div class="chat-inputwrap" style="border:none;padding:0;align-items:center">
               <textarea id="polygptInput" rows="1" placeholder="Ask anything about your policies…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.polygptView.ask();}"></textarea>
               <button class="chat-send" onclick="App.polygptView.ask()">${App.icon('send')}</button>
             </div>

@@ -163,7 +163,7 @@ p { margin: 0; }
 /* main column */
 .main { display:flex; flex-direction:column; min-width:0; height:100%; }
 .topbar {
-  height:62px; flex-shrink:0; background:var(--surface); border-bottom:1px solid var(--line);
+  height:62px; flex-shrink:0; background:transparent; border-bottom:none;
   display:flex; align-items:center; gap:14px; padding:0 24px;
 }
 .topbar__title { font-family:var(--font-display); font-size:17px; font-weight:600; letter-spacing:-.01em; }

@@ -7,15 +7,19 @@ App.registerView('assessments', {
 
     /* ---------- Staff "My Assessments" (simplified) ---------- */
     if (!isManager) {
-      const mine = DB.assessments.filter(a => a.status !== 'Draft');
-      // assignment state — prefer the user's REAL submission; otherwise it's Pending (takeable)
+      // only show assessments whose category the user can actually access (no Lending quiz for a denied staffer)
+      const mine = DB.assessments.filter(a => a.status !== 'Draft' && App.visiblePolicies(u).some(p => p.category === a.category));
+      const TODAY = Date.parse('2026-06-21');
+      // state: a real submission wins; else Closed if past its window/completed; else Pending (takeable)
       const stateFor = (a) => {
         const sub = App.assessmentsView._subForUser(a.id, u.id);
         if (sub) return { label: sub.passed ? 'Passed' : 'Completed', kind: sub.passed ? 'green' : 'amber', score: sub.score, real: true };
+        const end = Date.parse(a.end);
+        if (a.status === 'Completed' || (!isNaN(end) && end < TODAY)) return { label: 'Closed', kind: 'gray', score: null, closed: true };
         return { label: 'Pending', kind: 'amber', score: null };
       };
       const done = mine.filter(a => stateFor(a).real).length;
-      const pending = mine.length - done;
+      const pending = mine.filter(a => stateFor(a).label === 'Pending').length;
       const cards = mine.map(a => {
         const s = stateFor(a);
         const cat = DB.categories.find(c => c.name === a.category);
@@ -26,7 +30,7 @@ App.registerView('assessments', {
             <div class="muted" style="font-size:12.5px;margin-top:4px">${App.esc(a.category)} · Window ${a.start} – ${a.end} · Passing ${a.passing}%</div>
             ${s.score != null ? `<div class="muted" style="font-size:12.5px;margin-top:4px">Your score: <b style="color:var(--ink)">${s.score}%</b></div>` : ''}
           </div>
-          <button class="btn ${s.real ? '' : 'btn--primary'} btn--sm" onclick="App.assessmentsView.take('${a.id}')">${s.real ? App.icon('eye') + ' Review' : App.icon('arrow') + ' Take test'}</button>
+          <button class="btn ${s.real || s.closed ? '' : 'btn--primary'} btn--sm"${s.closed && !s.real ? ' disabled' : ` onclick="App.assessmentsView.take('${a.id}')"`}>${s.real ? App.icon('eye') + ' Review' : s.closed ? 'Closed' : App.icon('arrow') + ' Take test'}</button>
         </div>`;
       }).join('');
 

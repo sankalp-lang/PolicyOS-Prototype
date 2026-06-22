@@ -39,7 +39,7 @@ var rd = (typeof readFile !== 'undefined') ? readFile : read;
 function load(p){ try { (0, eval)(rd(p)); return null; } catch(e){ return p + ' :: ' + e; } }
 
 var loadErrors = [];
-['data.js','core.js','llm.js','sim.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
+['data.js','core.js','llm.js','sim.js','tour.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
 
 var viewFiles = ['dashboard','copilot','policies','directory','access','usersaccess','polygpt','rulesense',
   'approvals','regulatory','usermgmt','category','bredecoder','insightgen','assessments','connectors'];
@@ -180,6 +180,14 @@ App.assessmentsView._subs('AS1').push({ userId:'THQ0125', score:80, correct:4, t
 chk(!!App.assessmentsView._subForUser('AS1','THQ0125') && App.assessmentsView._subForUser('AS1','THQ0125').score===80, 'Assessments: staff submission recorded & retrievable (admin can read it)');
 var asErr=null; App.state.user=admin; try { App.assessmentsView.open('AS1'); App.closeModal(); } catch(e){ asErr=e; }
 chk(!asErr, 'Assessments: admin detail renders with the real staff submission: '+(asErr||''));
+
+// Assessments: staff still cannot see a Lending quiz (RBAC gating retained on the My Assessments page)
+chk(!App.visiblePolicies(staff).some(function(p){return p.category==='Lending';}), 'Assessments: staff cannot see Lending, so the Lending quiz stays gated off');
+
+// Guided product tour (role-aware spotlight walkthrough)
+chk(typeof App.tour === 'object' && typeof App.tour.start === 'function', 'Tour: engine present');
+chk(Array.isArray(App.tour.stepsFor(admin)) && App.tour.stepsFor(admin).length >= 5, 'Tour: admin gets a role-aware step list');
+chk(App.tour.stepsFor(staff)[3] && /home/i.test(App.tour.stepsFor(staff)[3].title), 'Tour: step list includes the home step');
 
 print('=== RBAC semantics ===');
 print(semFails.length ? 'SEMANTIC FAILS:\n'+semFails.join('\n') : 'RBAC semantics OK (deny + allow paths verified)');

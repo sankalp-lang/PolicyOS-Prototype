@@ -63,7 +63,7 @@ window.App = (function () {
   App.icon = (name, cls) => `<svg class="ico ${cls||''}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${I[name]||I.dot}</svg>`;
 
   /* ---------------- helpers ---------------- */
-  const PALETTE = ['#4f46e5','#0891b2','#7c3aed','#db2777','#059669','#d97706','#2563eb','#e11d48','#0d9488','#9333ea'];
+  const PALETTE = ['#4c63cf','#3a7479','#5e4d83','#9a7124','#356546','#566089','#a8553a','#2f6f6a','#7a5a45','#6b5384'];
   App.esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   App.color = s => PALETTE[Math.abs(String(s).split('').reduce((a,c)=>a*31+c.charCodeAt(0)|0,7)) % PALETTE.length];
   App.initials = n => n.split(' ').filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase();
@@ -439,6 +439,7 @@ window.App = (function () {
     App.chat.render();
     App.renderNav();
     if (App.llm && App.llm.refreshBadges) App.llm.refreshBadges();
+    if (App.tour) App.tour.renderRelaunch();
   }
 
   /* ---------------- user menu ---------------- */
@@ -455,6 +456,7 @@ window.App = (function () {
       <div class="cmdk__item ${App.edition()==='standard'?'is-active':''}" onclick="App.setEdition('standard')">${App.icon('grid')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Standard</div><div style="font-size:11px;color:var(--muted)">Connectors + company brain</div></div>${App.edition()==='standard'?App.icon('check'):''}</div>
       <div class="cmdk__item ${App.edition()==='enterprise'?'is-active':''}" onclick="App.setEdition('enterprise')">${App.icon('lock')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Enterprise · on-prem</div><div style="font-size:11px;color:var(--muted)">Policies only, no connectors</div></div>${App.edition()==='enterprise'?App.icon('check'):''}</div>` : ''}
       <div class="divider" style="margin:8px 0"></div>
+      <div class="cmdk__item" onclick="App.tour.start()">${App.icon('sparkles')}<span>Take a tour</span></div>
       <div class="cmdk__item" onclick="App.logout()">${App.icon('logout')}<span>Log out</span></div>`;
     setTimeout(()=>document.addEventListener('click', function h(){ if($('#userMenu'))$('#userMenu').style.display='none'; document.removeEventListener('click',h); }),0);
   };
@@ -540,8 +542,9 @@ window.App = (function () {
     App.state.chat = []; App.state.copilot = []; App.state.polygpt = []; App.state.polygptSel = []; App.state.insightgen = null;
     renderShell();
     App.navigate('dashboard');
+    if (App.tour) App.tour.maybeAutostart();
   };
-  App.logout = () => { App.state.user = null; App.state.chat = []; renderLogin(); };
+  App.logout = () => { App.state.user = null; App.state.chat = []; if (App.tour) App.tour._cleanup(); renderLogin(); };
 
   App.signIn = () => {
     const rk = { admin:'violet', policy_manager:'blue', risk_approver:'amber', user:'green' };

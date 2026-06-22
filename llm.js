@@ -54,6 +54,18 @@
     gmail:'<svg viewBox="0 0 24 24" width="100%" height="100%"><rect x="3" y="5.5" width="18" height="13" rx="2" fill="#fff" stroke="#EA4335" stroke-width="1.4"/><path d="M4 7l8 6 8-6" stroke="#EA4335" stroke-width="1.4" fill="none"/></svg>'
   };
 
+  /* ---------------- real brand logos via logo.dev (publishable key only) ---------------- */
+  const LOGODEV_PK = 'pk_L_47syMESEi-pOlU39KgSw';
+  const PROVIDER_DOMAINS = { gemini:'gemini.google.com', openai:'openai.com', anthropic:'anthropic.com', sarvam:'sarvam.ai', grok:'x.ai', perplexity:'perplexity.ai' };
+  const CONN_DOMAINS = { keka:'keka.com', greythr:'greythr.com', jira:'jira.com', notion:'notion.so', slack:'slack.com', policyos:'tartanhq.com', gdrive:'google.com', gmail:'gmail.com' };
+  function logoImg(dom, id, kind, s) {
+    return '<span class="brand-logo" style="width:' + s + 'px;height:' + s + 'px">'
+      + '<img src="https://img.logo.dev/' + dom + '?token=' + LOGODEV_PK + '&size=' + (s * 2) + '&format=png&retina=true" width="' + s + '" height="' + s + '" alt="" onerror="App.brandFallback(this,\'' + kind + '\',\'' + id + '\')">'
+      + '</span>';
+  }
+  // if logo.dev is unreachable/offline, fall back to the inline SVG mark
+  App.brandFallback = function (el, kind, id) { const m = (kind === 'conn') ? CONN_LOGOS : LOGOS; const sp = el.parentNode; if (sp) sp.innerHTML = m[id] || ''; };
+
   function md(s) {
     s = App.esc(s || '');
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -79,7 +91,7 @@
   const _llmMem = {}; const llmStore = store('tara_llm_cfg', _llmMem);
   const LLM = {
     PROVIDERS,
-    logo(id, size) { const s = (size || 18) + 'px'; return '<span class="brand-logo" style="width:' + s + ';height:' + s + '">' + (LOGOS[id] || '') + '</span>'; },
+    logo(id, size) { const s = (size || 18); const dom = PROVIDER_DOMAINS[id]; return dom ? logoImg(dom, id, 'llm', s) : '<span class="brand-logo" style="width:' + s + 'px;height:' + s + 'px">' + (LOGOS[id] || '') + '</span>'; },
     get() { return llmStore.get(); },
     configured() { const c = LLM.get(); return !!(c.primary && c.primary.provider && c.primary.model && c.primary.key); },
     modelMeta(slot) { const c = LLM.get(); const s = c[slot]; if (!s) return null; const p = PROVIDERS[s.provider]; const m = p && p.models.find(x => x.id === s.model); return { provider: s.provider, providerLabel: p ? p.label : s.provider, model: s.model, modelLabel: m ? m.label : s.model }; },
@@ -216,7 +228,7 @@
      ============================================================ */
   const _connMem = {}; const connStore = store('tara_conn_cfg', _connMem);
   const CONN = {
-    logo(id, size) { const s = (size || 22) + 'px'; return '<span class="brand-logo" style="width:' + s + ';height:' + s + '">' + (CONN_LOGOS[id] || CONN_LOGOS.policyos) + '</span>'; },
+    logo(id, size) { const s = (size || 22); const dom = CONN_DOMAINS[id]; return dom ? logoImg(dom, id, 'conn', s) : '<span class="brand-logo" style="width:' + s + 'px;height:' + s + 'px">' + (CONN_LOGOS[id] || CONN_LOGOS.policyos) + '</span>'; },
     all() { return connStore.get(); },
     state(id) { const c = connStore.get()[id]; return c && c.connected ? c : null; },
     isConnected(id) { return !!CONN.state(id); },

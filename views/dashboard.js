@@ -12,19 +12,22 @@ App.registerView('dashboard', {
     const visPolicies = App.visiblePolicies(u).length;
     const inOffice = DB.employees.filter(e => e.presence === 'office').length;
 
-    // front door: a single centered Ask-Tara command bar (everyone)
+    // front door: a single centered Ask-Tara command bar (everyone).
+    // description, placeholder example and chips all derive from CONNECTED sources.
     const fn = u.name.split(' ')[0];
+    const heroEg = App.hasSource('jira') ? 'who is working on PolicyOS?' : (App.hasSource('keka') ? "who's in office today?" : "what's the leave policy?");
+    const heroChips = App.suggestPrompts(u).slice(0, 3).map(s => s.q);
     const hero = `
       <div style="text-align:center;max-width:760px;margin:8px auto 36px">
         <h1 style="font-size:32px;font-weight:600;letter-spacing:-.01em">Hello, ${App.esc(fn)}.</h1>
-        <p class="muted" style="margin:11px auto 0;font-size:14.5px;max-width:560px">Start by asking. Tara reaches across your policies, people and projects — and only ever answers from what you're allowed to see.</p>
+        <p class="muted" style="margin:11px auto 0;font-size:14.5px;max-width:560px">Start by asking. Tara reaches across your ${App.sourceNounList('and')} — and only ever answers from what you're allowed to see.</p>
         <div class="chat-inputwrap" style="margin:22px auto 0;max-width:700px;align-items:center;border-radius:12px;padding:9px 9px 9px 15px;text-align:left">
           <span style="color:var(--brand-600);display:grid;place-items:center">${App.icon('sparkles')}</span>
-          <textarea id="homeAsk" rows="1" placeholder="Ask anything…  e.g. who is working on PolicyOS?" style="padding-top:6px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.chat.toggle(true);App.chat.ask(this.value);this.value='';}"></textarea>
+          <textarea id="homeAsk" rows="1" placeholder="Ask anything…  e.g. ${heroEg}" style="padding-top:6px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.chat.toggle(true);App.chat.ask(this.value);this.value='';}"></textarea>
           <button class="chat-send" onclick="(function(){var el=document.getElementById('homeAsk');App.chat.toggle(true);App.chat.ask(el.value);el.value='';})()">${App.icon('send')}</button>
         </div>
         <div class="row gap-8" style="margin-top:14px;flex-wrap:wrap;justify-content:center">
-          ${["Who's in office today?", "Who's working on PolicyOS?", "What's the leave policy?"].map(q => `<button class="btn btn--sm" onclick="App.chat.toggle(true);App.chat.ask('${q.replace(/'/g, "\\'")}')">${q}</button>`).join('')}
+          ${heroChips.map(q => `<button class="btn btn--sm" onclick="App.chat.toggle(true);App.chat.ask('${q.replace(/'/g, "\\'")}')">${App.esc(q)}</button>`).join('')}
         </div>
       </div>`;
 

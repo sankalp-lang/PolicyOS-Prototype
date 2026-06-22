@@ -93,27 +93,36 @@
     PROVIDERS,
     logo(id, size) { const s = (size || 18); const dom = PROVIDER_DOMAINS[id]; return dom ? logoImg(dom, id, 'llm', s) : '<span class="brand-logo" style="width:' + s + 'px;height:' + s + 'px">' + (LOGOS[id] || '') + '</span>'; },
     get() { return llmStore.get(); },
-    configured() { const c = LLM.get(); return !!(c.primary && c.primary.provider && c.primary.model && c.primary.key); },
+    configured() { const c = LLM.get(); return !!(c.primary && c.primary.provider && c.primary.model && c.primary.key); }, // live (key present)
+    selected() { const c = LLM.get(); return !!(c.primary && c.primary.provider && c.primary.model); },                  // a model is chosen (key optional)
     modelMeta(slot) { const c = LLM.get(); const s = c[slot]; if (!s) return null; const p = PROVIDERS[s.provider]; const m = p && p.models.find(x => x.id === s.model); return { provider: s.provider, providerLabel: p ? p.label : s.provider, model: s.model, modelLabel: m ? m.label : s.model }; },
     clear() { llmStore.set({}); LLM.refreshBadges(); },
 
     buildContext(user) {
-      const ent = App.edition && App.edition() === 'enterprise';
+      const hrmsOn = App.hasSource && (App.hasSource('keka') || App.hasSource('greythr'));
+      const jiraOn = App.hasSource && App.hasSource('jira');
       const canComp = App.canSeeComp(user);
       const vis = App.visiblePolicies(user);
       const pol = vis.map(p => '### ' + p.name + ' (' + p.version + ', ' + p.category + ')\n' + p.summary + '\nKey parameters: ' + Object.entries(p.facts).map(([k, v]) => k + ': ' + v).join('; ') + '\nRules: ' + p.rules.join(' | ')).join('\n\n');
       const hidden = DB.policies.length - vis.length;
       const polBlock = '## POLICIES THIS USER MAY ACCESS (PolicyOS) — ' + vis.length + ' of ' + DB.policies.length + '\n' + (pol || '(none in scope)') + '\n\n[' + hidden + ' other policies exist but are OUTSIDE this user\'s scope and are not included.]';
-      if (ent) {
-        return 'COMPANY: ' + DB.company.name + '\n\n' + polBlock + '\n\n[On-prem PolicyOS edition: connected sources (HRMS, Jira, Notion) are not part of this deployment — answer from policies only.]';
+      let ctx = 'COMPANY: ' + DB.company.name + '\n\n';
+      if (hrmsOn) {
+        const people = DB.employees.map(e => { let s = '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence); if (canComp && DB.compensation[e.id]) s += ' | compensation: ' + DB.compensation[e.id]; return s; }).join('\n');
+        const teams = DB.teams.map(t => '- ' + t.name + ' (lead ' + t.lead + ', ' + DB.employees.filter(e => e.team === t.name).length + ')').join('\n');
+        ctx += '## PEOPLE (Keka HRMS)\n' + people + '\n\n## TEAMS\n' + teams + '\n\n';
       }
-      const people = DB.employees.map(e => { let s = '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence); if (canComp && DB.compensation[e.id]) s += ' | compensation: ' + DB.compensation[e.id]; return s; }).join('\n');
-      const teams = DB.teams.map(t => '- ' + t.name + ' (lead ' + t.lead + ', ' + DB.employees.filter(e => e.team === t.name).length + ')').join('\n');
-      const jira = DB.jiraIssues.map(i => '- ' + i.key + ' | ' + i.title + ' | assignee ' + App.emp(i.assignee).name + ' | ' + ((DB.jiraProjects.find(p => p.key === i.project) || {}).name) + ' | ' + i.status).join('\n');
-      return 'COMPANY: ' + DB.company.name + '\n\n## PEOPLE (Keka HRMS)\n' + people + '\n\n## TEAMS\n' + teams + '\n\n## WORK IN PROGRESS (Jira)\n' + jira + '\n\n' + polBlock + (canComp ? '' : '\n[Compensation NOT included — user not permitted.]');
+      if (jiraOn) {
+        const jira = DB.jiraIssues.map(i => '- ' + i.key + ' | ' + i.title + ' | assignee ' + App.emp(i.assignee).name + ' | ' + ((DB.jiraProjects.find(p => p.key === i.project) || {}).name) + ' | ' + i.status).join('\n');
+        ctx += '## WORK IN PROGRESS (Jira)\n' + jira + '\n\n';
+      }
+      ctx += polBlock + (canComp ? '' : '\n[Compensation NOT included — user not permitted.]');
+      if (!hrmsOn && !jiraOn) ctx += '\n\n[Only the policy library is connected in this deployment — answer from policies only.]';
+      return ctx;
     },
     systemPrompt(user) {
-      return 'You are Tara, the on-prem company copilot for ' + DB.company.name + ', answering for ' + user.name + ' (' + DB.roleLabels[user.role] + ', ' + user.team + ').\nRULES: Answer ONLY from the CONTEXT below — it is already filtered to what THIS user may see. If something is absent (a policy, person, or salary), say the user is not permitted to see it; never guess or use outside knowledge. Be concise; bold key values like **720**. End with a final line "SOURCES: <subset of HRMS, Jira, Policies>" (omit if none).\n\nCONTEXT:\n' + LLM.buildContext(user);
+      const srcList = (App.sourceLabels ? App.sourceLabels() : []).concat(['Policies']).join(', ');
+      return 'You are Tara, the on-prem company copilot for ' + DB.company.name + ', answering for ' + user.name + ' (' + DB.roleLabels[user.role] + ', ' + user.team + ').\nRULES: Answer ONLY from the CONTEXT below — it is already filtered to what THIS user may see. If something is absent (a policy, person, or salary), say the user is not permitted to see it; never guess or use outside knowledge. Be concise; bold key values like **720**. End with a final line "SOURCES: <subset of ' + srcList + '>" (omit if none).\n\nCONTEXT:\n' + LLM.buildContext(user);
     },
 
     async _call(slot, query, user) {
@@ -168,7 +177,7 @@
       }
     },
 
-    statusLabel() { const m = LLM.modelMeta('primary'); return m ? (LLM.logo(m.provider, 14) + ' ' + App.esc(m.modelLabel)) : (App.icon('plug') + ' Demo mode'); },
+    statusLabel() { const m = LLM.modelMeta('primary'); if (!m) return App.icon('plug') + ' Demo mode'; return LLM.logo(m.provider, 14) + ' ' + App.esc(m.modelLabel) + (LLM.configured() ? '' : ' · demo'); },
     refreshBadges() { document.querySelectorAll('.tara-status').forEach(el => { el.innerHTML = LLM.statusLabel(); el.classList.toggle('is-live', LLM.configured()); }); },
 
     /* ---- setup modal (model-card grid + optional fallback) ---- */
@@ -176,9 +185,9 @@
     openSetup() {
       const c = LLM.get();
       LLM._draft = { primary: Object.assign({ provider: '', model: '', key: '' }, c.primary), fallback: Object.assign({ provider: '', model: '', key: '' }, c.fallback), showFallback: !!(c.fallback && c.fallback.provider) };
-      App.openModal({ title: 'Connect a model', sub: 'Bring your own key. Pick any model — Tara only ever sends each user the data they\'re allowed to see.', lg: true,
+      App.openModal({ title: 'Connect a model', sub: 'Bring your own key. Pick any model — Tara only ever sends each user the data they\'re allowed to see. The key is optional here: pick a model to preview it in demo mode, add a key to answer live.', lg: true,
         body: '<div id="llmSetupBody"></div>',
-        footer: (LLM.configured() ? '<button class="btn btn--danger" onclick="App.llm.clear();App.closeModal();App.toast(\'Disconnected — demo mode\')">Disconnect</button>' : '') + '<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.llm._save()">Connect</button>' });
+        footer: (LLM.selected() ? '<button class="btn btn--danger" onclick="App.llm.clear();App.closeModal();App.toast(\'Reset to demo mode\')">Reset to demo</button>' : '') + '<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.llm._save()">Save model</button>' });
       LLM._renderSetup();
     },
     _grid(slot, excludeId) {
@@ -198,7 +207,7 @@
       let html =
         '<div class="info-banner">' + App.icon('lock') + ' <span>Permission-faithful: the model is handed only the context the current persona can see. Log in as a staff user and it literally can\'t answer about a policy they\'re not on.</span></div>' +
         '<div class="setup-label">Primary model</div>' + LLM._grid('primary') +
-        '<div class="field" style="margin-top:14px"><label>API key for ' + (d.primary.provider ? PROVIDERS[d.primary.provider].label : 'the selected model') + '</label><input class="input" id="llmKeyPrimary" type="password" placeholder="' + App.esc(pHint) + '" value="' + App.esc(d.primary.key) + '" oninput="App.llm._draft.primary.key=this.value"/><div class="hint">Stored only in this browser. Sent only to ' + (d.primary.provider ? PROVIDERS[d.primary.provider].company : 'the provider') + '.</div></div>' +
+        '<div class="field" style="margin-top:14px"><label>API key for ' + (d.primary.provider ? PROVIDERS[d.primary.provider].label : 'the selected model') + '</label><input class="input" id="llmKeyPrimary" type="password" placeholder="' + App.esc(pHint) + '" value="' + App.esc(d.primary.key) + '" oninput="App.llm._draft.primary.key=this.value"/><div class="hint">Optional — leave blank to preview this model in demo mode. If set, it\'s stored only in this browser and sent only to ' + (d.primary.provider ? PROVIDERS[d.primary.provider].company : 'the provider') + '.</div></div>' +
         '<div class="divider"></div>';
       if (!d.showFallback) {
         html += '<button class="btn btn--sm" onclick="App.llm._draft.showFallback=true;App.llm._renderSetup()">' + App.icon('plus') + ' Add a fallback model (optional)</button>';
@@ -214,11 +223,12 @@
     _save() {
       const d = LLM._draft;
       if (!d.primary.provider || !d.primary.model) { App.toast('Pick a primary model', 'warn'); return; }
-      if (!d.primary.key.trim()) { App.toast('Enter the API key for the primary model', 'warn'); return; }
+      // key is OPTIONAL — selecting a model persists and shows in the header; a key upgrades it to live answers.
       const cfg = { primary: { provider: d.primary.provider, model: d.primary.model, key: d.primary.key.trim() } };
-      if (d.showFallback && d.fallback.provider && d.fallback.model && d.fallback.key.trim()) cfg.fallback = { provider: d.fallback.provider, model: d.fallback.model, key: d.fallback.key.trim() };
+      if (d.showFallback && d.fallback.provider && d.fallback.model) cfg.fallback = { provider: d.fallback.provider, model: d.fallback.model, key: d.fallback.key.trim() };
       llmStore.set(cfg); LLM.refreshBadges(); App.closeModal();
-      App.toast('Connected · ' + LLM.modelMeta('primary').modelLabel);
+      const label = LLM.modelMeta('primary').modelLabel;
+      App.toast(d.primary.key.trim() ? ('Connected live · ' + label) : ('Model set · ' + label + ' — add a key to answer live'));
     }
   };
   App.llm = LLM;

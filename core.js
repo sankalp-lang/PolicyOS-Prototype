@@ -107,9 +107,36 @@ window.App = (function () {
   App.visiblePolicies = user => DB.policies.filter(p => App.catEnabled(p.category) && App.canViewPolicy(p, user));
   App.canSeeComp = user => { user = user||App.state.user; return user.role==='admin' || user.hrAdmin || user.team==='People & Talent' || user.team==="Founder's Office"; };
 
-  /* ---------------- edition (Standard = full + connectors · Enterprise = on-prem, policies only) ---------------- */
+  /* ---------------- edition (deployment model only — BOTH have connectors) ----------------
+     Standard = cloud-hosted / managed · Enterprise = on-prem (your infra, data never leaves). */
   App.edition = () => { try { return localStorage.getItem('tara_edition') || 'standard'; } catch (e) { return 'standard'; } };
-  App.setEdition = (ed) => { try { localStorage.setItem('tara_edition', ed); } catch (e) {} renderShell(); App.navigate('dashboard'); App.toast(ed === 'enterprise' ? 'Switched to Enterprise · on-prem (policies only)' : 'Switched to Standard (connectors + company brain)'); };
+  App.setEdition = (ed) => { try { localStorage.setItem('tara_edition', ed); } catch (e) {} renderShell(); App.navigate('dashboard'); App.toast(ed === 'enterprise' ? 'Switched to Enterprise · on-prem' : 'Switched to Standard · cloud'); };
+
+  /* ---------------- connected data sources (drive prompts, descriptions & Tara's context) ----------------
+     A source is "on" if it ships connected in the demo OR the user connected it on the Connectors page.
+     Everything Tara offers to ask is derived from THIS set — never from the edition. */
+  App.connectedSources = () => DB.connectors.filter(c => c.status === 'connected' || (App.conn && App.conn.isConnected(c.id)));
+  App.hasSource = (id) => App.connectedSources().some(c => c.id === id);
+  App._srcLabel = { keka:'HRMS', greythr:'HRMS', jira:'Jira', notion:'Notion', slack:'Slack', gdrive:'Drive', gmail:'Gmail' };
+  // ordered, de-duped source labels (excludes policies — named separately as "your policies")
+  App.sourceLabels = () => { const seen = {}, out = []; App.connectedSources().forEach(c => { if (c.id === 'policyos') return; const l = App._srcLabel[c.id] || c.name; if (!seen[l]) { seen[l] = 1; out.push(l); } }); return out; };
+  App.sourcePhrase = () => { const ls = App.sourceLabels(); return ls.length ? ls.join(', ') + ' and your policies' : 'your policy library'; };
+  App.sourceNouns = () => { const n = []; if (App.hasSource('keka') || App.hasSource('greythr')) n.push('people'); if (App.hasSource('jira')) n.push('work'); if (App.hasSource('notion') || App.hasSource('gdrive')) n.push('docs'); n.push('policies'); return n; };
+  App.sourceNounList = (conj) => { const n = App.sourceNouns(); conj = conj || 'and'; return n.length <= 1 ? (n[0] || 'policies') : n.slice(0, -1).join(', ') + ' ' + conj + ' ' + n[n.length - 1]; };
+  App._srcChip = { keka:{ c:'hrms', ic:'users', l:'HRMS' }, greythr:{ c:'hrms', ic:'users', l:'HRMS' }, jira:{ c:'jira', ic:'branch', l:'Jira' }, notion:{ c:'', ic:'book', l:'Notion' }, slack:{ c:'slack', ic:'chat', l:'Slack' }, policyos:{ c:'policy', ic:'shield', l:'Policies' }, gdrive:{ c:'', ic:'file', l:'Drive' }, gmail:{ c:'', ic:'mail', l:'Gmail' } };
+  App.sourceChips = () => { const seen = {}, out = []; App.connectedSources().forEach(c => { const m = App._srcChip[c.id] || { c:'', ic:'database', l:c.name }; if (seen[m.l]) return; seen[m.l] = 1; out.push(`<span class="src-chip ${m.c}">${App.icon(m.ic)} ${App.esc(m.l)}</span>`); }); return out.join(''); };
+  // example prompts — only for sources Tara can actually answer here (HRMS, Jira, Policies) + role flavour
+  App.suggestPrompts = (user) => {
+    user = user || App.state.user; const out = [];
+    const keka = App.hasSource('keka') || App.hasSource('greythr'), jira = App.hasSource('jira');
+    if (keka) out.push({ q:"Who's in the Engineering team?", ic:'users', tag:'HRMS' });
+    if (jira) out.push({ q:'Who is working on PolicyOS?', ic:'branch', tag:'Jira' });
+    out.push({ q:"What's the leave policy?", ic:'shield', tag:'Policy' });
+    if (keka) out.push({ q:'Is Sankalp in office today?', ic:'clock', tag:'HRMS' });
+    if (jira) out.push({ q:'What is Abhishek Chaudhary working on?', ic:'branch', tag:'Jira' });
+    out.push(user.role === 'user' ? { q:"What's the travel & expense policy?", ic:'briefcase', tag:'Policy' } : { q:'Personal loan eligibility criteria?', ic:'file', tag:'Policy' });
+    return out;
+  };
 
   /* ---------------- TARA chat engine (keyword routing + permission-faithful) ---------------- */
   function sourceChip(kind, label) {
@@ -131,7 +158,8 @@ window.App = (function () {
     const emp = App.empByName(raw);
     const team = DB.teams.find(t => q.includes(t.name.toLowerCase()) || q.includes(t.name.split(' ')[0].toLowerCase()+' team'));
     const proj = DB.jiraProjects.find(p => q.includes(p.name.toLowerCase()) || q.includes(p.key.toLowerCase()) || (p.key==='TARA'&&has('policyos','policy os','tara')) || (p.key==='HS'&&has('hypersync','hyper sync')) || (p.key==='HV'&&has('hyperverify','hyper verify')));
-    const ent = App.edition() === 'enterprise';  // on-prem edition: policies only, no connectors
+    const hrmsOn = App.hasSource('keka') || App.hasSource('greythr');  // people/teams/presence/comp
+    const jiraOn = App.hasSource('jira');                              // work in progress
 
     // ---- 0) Impact / what-if simulation (policy-side; works in both editions, RBAC-scoped) ----
     const simVerb = has('what if','simulate','impact of','effect of') || (has('raise','lower','increase','decrease','tighten','loosen','set ') && has('cibil','cutoff','foir','ltv','threshold','score','eligib'));
@@ -155,7 +183,7 @@ window.App = (function () {
     }
 
     // ---- 1) Compensation / salary (GATED) ----
-    if (!ent && has('salary','compensation',' ctc',' pay ','package','esop','income of','earn')) {
+    if (hrmsOn && has('salary','compensation',' ctc',' pay ','package','esop','income of','earn')) {
       if (!App.canSeeComp(user)) {
         return { html:`<p>🔒 <strong>You don't have access to compensation data.</strong></p><p class="muted" style="margin-top:6px">Salary &amp; band information is restricted to <strong>People &amp; Talent</strong> and the <strong>Founder's Office</strong>. Tara only ever returns what your role is permitted to see in the source system.</p>`,
                  sources:[{kind:'locked',label:'HRMS · compensation (no access)'}] };
@@ -169,7 +197,7 @@ window.App = (function () {
     }
 
     // ---- 2) Jira / who is working on what ----
-    if (!ent && has('working on','work on','building','what is','whats','doing','jira','ticket','issue','sprint','progress','tasks','task ','status of','assigned')) {
+    if (jiraOn && has('working on','work on','building','what is','whats','doing','jira','ticket','issue','sprint','progress','tasks','task ','status of','assigned')) {
       if (proj) {
         const issues = DB.jiraIssues.filter(i => i.project === proj.key);
         const body = issues.map(i => { const a=App.emp(i.assignee);
@@ -192,7 +220,7 @@ window.App = (function () {
     }
 
     // ---- 3) Presence / attendance (HRMS) ----
-    if (!ent && has('in office','in the office','present','on leave','attendance','wfh','checked in','who is in','whos in','here today','office today','working from')) {
+    if (hrmsOn && has('in office','in the office','present','on leave','attendance','wfh','checked in','who is in','whos in','here today','office today','working from')) {
       if (emp) {
         const txt = emp.presence==='office' ? `is <strong>in the office</strong> today (checked in ${emp.checkin})` : emp.presence==='remote' ? `is <strong>working remotely</strong> today` : `is <strong>on leave</strong> today`;
         return { html:`<p>${App.esc(emp.name)} ${txt}.</p>`, sources:[{kind:'hrms',label:'Keka HRMS · attendance'}] };
@@ -206,7 +234,7 @@ window.App = (function () {
     }
 
     // ---- 4) People / teams (HRMS) ----
-    if (!ent && (team || has('team','teams','department','members','directory','people','colleagues','reports to','manager','headcount','how many','who are','list ','org '))) {
+    if (hrmsOn && (team || has('team','teams','department','members','directory','people','colleagues','reports to','manager','headcount','how many','who are','list ','org '))) {
       if (team) {
         const members = DB.employees.filter(e => e.team === team.name);
         const body = members.map(personRow).join('');
@@ -227,9 +255,11 @@ window.App = (function () {
                sources:[{kind:'hrms',label:'Keka HRMS · directory'}] };
     }
 
-    // ---- enterprise (on-prem): connected-source questions aren't available ----
-    if (ent && (team || emp || has('salary','compensation','working on','work on','in office','present','attendance','team','people','headcount','jira','who is','whos in','directory','colleagues'))) {
-      return { html:`<p>In the <strong>on-prem PolicyOS edition</strong>, Tara answers from your <strong>policy library</strong> only — connected sources like HRMS and Jira aren't part of this deployment.</p>`, sources:[] };
+    // ---- a connected-source question, but that source isn't connected ----
+    if ((!hrmsOn && (team || emp || has('salary','compensation','in office','present','attendance','people','headcount','colleagues','directory','who is','whos in'))) ||
+        (!jiraOn && has('working on','work on','jira','ticket','issue','sprint'))) {
+      const missing = !hrmsOn ? 'an HRMS (e.g. Keka)' : 'Jira';
+      return { html:`<p>I can't answer that yet — <strong>${missing}</strong> isn't connected in this deployment. An admin can connect it on the <strong>Connectors</strong> page; Tara then answers permission-faithfully from it.</p>`, sources:[{kind:'locked',label:(!hrmsOn?'HRMS':'Jira')+' · not connected'}] };
     }
 
     // ---- 5) Policy Q&A (permission-faithful) ----
@@ -266,41 +296,27 @@ window.App = (function () {
                sources:[{kind:'policy',label:'PolicyOS repository'}] };
     }
 
-    // ---- fallback ----
-    if (ent) {
-      return { html:`<p>I'm <strong>Tara</strong> — on-prem, scoped to your <strong>policy library</strong> and only what your role can see. Try:</p>
-        <ul><li><strong>Policies</strong> — “what's the leave policy?”, “personal loan eligibility?”, “KYC &amp; AML summary”</li></ul>`, sources:[] };
-    }
+    // ---- fallback (capabilities reflect the connected sources) ----
+    const tips = [];
+    if (hrmsOn) tips.push(`<li><strong>People & teams</strong> — “who's in the Design team?”, “is Sankalp in office?”</li>`);
+    if (jiraOn) tips.push(`<li><strong>Work in progress</strong> — “who's working on PolicyOS?”, “what is Abhishek working on?”</li>`);
+    tips.push(`<li><strong>Policies</strong> — “what's the leave policy?”, “personal loan eligibility?”</li>`);
     return { html:`<p>I'm <strong>Tara</strong> — your company copilot. I answer only from sources <em>you're</em> permitted to see. Try:</p>
-      <ul>
-        <li><strong>People & teams</strong> — “who's in the Design team?”, “is Sankalp in office?”</li>
-        <li><strong>Work in progress</strong> — “who's working on PolicyOS?”, “what is Abhishek working on?”</li>
-        <li><strong>Policies</strong> — “what's the leave policy?”, “personal loan eligibility?”</li>
-      </ul>`, sources:[] };
+      <ul>${tips.join('')}</ul>`, sources:[] };
   };
 
   /* ---------------- chat panel ---------------- */
-  function suggestionsFor(user) {
-    if (App.edition()==='enterprise') {
-      const e = [ { q:"What's the leave policy?", ic:'shield' }, { q:'KYC & AML policy summary', ic:'shield' } ];
-      if (user.role!=='user') e.push({ q:'Personal loan eligibility criteria?', ic:'file' });
-      return e;
-    }
-    const base = [
-      { q:"Who's in the Engineering team?", ic:'users' },
-      { q:'Who is working on PolicyOS?', ic:'branch' },
-      { q:"What's the leave policy?", ic:'shield' }
-    ];
-    if (user.role==='admin'||user.role==='policy_manager'||user.role==='risk_approver') base.push({ q:'Personal loan eligibility criteria?', ic:'file' });
-    else base.push({ q:'Is Sankalp in office today?', ic:'clock' });
-    return base;
-  }
+  function suggestionsFor(user) { return App.suggestPrompts(user).slice(0, 4); }
   App.chat = {
     toggle(open) { App.state.chatOpen = open==null ? !App.state.chatOpen : open; $('#chatPanel').classList.toggle('open', App.state.chatOpen); if(App.state.chatOpen){ App.chat.render(); setTimeout(()=>$('#chatInput')&&$('#chatInput').focus(),120);} },
     render() {
       const body = $('#chatBody'); if(!body) return;
       if (!App.state.chat.length) {
-        body.innerHTML = `<div class="msg msg--ai"><div class="msg__av">${App.icon('sparkles')}</div><div class="msg__bubble">Hi ${App.esc(App.state.user.name.split(' ')[0])} — ${App.edition()==='enterprise' ? `I'm <strong>Tara</strong>, scoped to your <strong>policy library</strong> and what your role can access.` : `I'm <strong>Tara</strong>. I pull from <strong>HRMS</strong>, <strong>Jira</strong>, <strong>Notion</strong> and your <strong>policies</strong> — only what your role can access.`} What do you need?</div></div>
+        const labs = App.sourceLabels();
+        const intro = labs.length
+          ? `I'm <strong>Tara</strong>. I pull from ${labs.map(l => '<strong>' + App.esc(l) + '</strong>').join(', ')} and your <strong>policies</strong> — only what your role can access.`
+          : `I'm <strong>Tara</strong>, scoped to your <strong>policy library</strong> and what your role can access.`;
+        body.innerHTML = `<div class="msg msg--ai"><div class="msg__av">${App.icon('sparkles')}</div><div class="msg__bubble">Hi ${App.esc(App.state.user.name.split(' ')[0])} — ${intro} What do you need?</div></div>
           <div class="chat-suggest">${suggestionsFor(App.state.user).map(s=>`<button class="chat-suggest__btn" onclick="App.chat.ask('${s.q.replace(/'/g,"\\'")}')">${App.icon(s.ic)} ${App.esc(s.q)}</button>`).join('')}</div>`;
         return;
       }
@@ -338,7 +354,6 @@ window.App = (function () {
           { title:'Knowledge', items:[ {id:'policies',label:'Policies',icon:'file'}, {id:'polygpt',label:'PolyGPT',icon:'chat'}, {id:'assessments',label:'My Assessments',icon:'clipboard'} ] }
         ] };
     }
-    const std = App.edition() === 'standard';
     const pinned = [ { id:'dashboard', label:'Dashboard', icon:'home' }, { id:'copilot', label:'Ask Tara', icon:'sparkles', tag:'AI' } ];
     const groups = [{ title:'Policy Management', items: [
       { id:'policies', label:'Policies', icon:'file' },
@@ -353,11 +368,11 @@ window.App = (function () {
     const brain = [];
     if (user.role==='policy_manager'||user.role==='admin'||user.role==='assessment_manager') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
     if (brain.length) groups.push({ title:'Company Brain', items: brain });
-    // Administration + Connectors: ADMIN ONLY. Connectors only in the Standard edition.
+    // Administration + Connectors: ADMIN ONLY. Connectors ship in BOTH editions now.
     if (user.role==='admin') {
-      const admin = [ { id:'usersaccess', label:'Users & access', icon:'users' } ];
-      if (std) admin.push({ id:'connectors', label:'Connectors', icon:'plug' });
-      admin.push({ id:'category', label:'Categories', icon:'layers' });
+      const admin = [ { id:'usersaccess', label:'Users & access', icon:'users' },
+        { id:'connectors', label:'Connectors', icon:'plug' },
+        { id:'category', label:'Categories', icon:'layers' } ];
       groups.push({ title:'Administration', items: admin });
     }
     return { pinned, groups };
@@ -390,7 +405,7 @@ window.App = (function () {
           </div>
           <div class="sidebar__search" onclick="App.cmd.open()">${App.icon('search')}<span>Search or ask…</span><span class="kbd">⌘K</span></div>
           <nav class="nav" id="navRoot"></nav>
-          <div style="padding:12px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)">${App.icon('lock','')} On-prem · ${App.edition()==='enterprise'?'Enterprise':'Standard'} edition</div>
+          <div style="padding:12px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)">${App.icon('lock','')} ${App.edition()==='enterprise'?'On-prem · Enterprise':'Cloud · Standard'} edition</div>
         </aside>
         <div class="main">
           <header class="topbar">
@@ -422,7 +437,7 @@ window.App = (function () {
         <div class="chat-body" id="chatBody"></div>
         <div class="chat-foot">
           <div class="chat-inputwrap">
-            <textarea id="chatInput" rows="1" placeholder="Ask about people, work, or policies…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.chat.ask();}"></textarea>
+            <textarea id="chatInput" rows="1" placeholder="Ask about ${App.sourceNouns().slice(0, 3).join(', ')}…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.chat.ask();}"></textarea>
             <button class="chat-send" onclick="App.chat.ask()">${App.icon('send')}</button>
           </div>
         </div>
@@ -453,8 +468,8 @@ window.App = (function () {
       ${DB.users.map(p=>{const e2=App.emp(p.id);const active=p.id===App.state.user.id;return `<div class="cmdk__item ${active?'is-active':''}" onclick="App.login('${p.id}')">${App.ui.avatar(e2,'sm')}<div style="flex:1"><div style="font-weight:600;font-size:13px">${App.esc(e2.name)}</div><div style="font-size:11.5px;color:var(--muted)">${App.esc(DB.roleLabels[p.role])}${p.hrAdmin?' · HR':''}</div></div>${active?App.icon('check'):''}</div>`;}).join('')}
       ${App.state.user.role==='admin' ? `<div class="divider" style="margin:8px 0"></div>
       <div style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em">Edition</div>
-      <div class="cmdk__item ${App.edition()==='standard'?'is-active':''}" onclick="App.setEdition('standard')">${App.icon('grid')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Standard</div><div style="font-size:11px;color:var(--muted)">Connectors + company brain</div></div>${App.edition()==='standard'?App.icon('check'):''}</div>
-      <div class="cmdk__item ${App.edition()==='enterprise'?'is-active':''}" onclick="App.setEdition('enterprise')">${App.icon('lock')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Enterprise · on-prem</div><div style="font-size:11px;color:var(--muted)">Policies only, no connectors</div></div>${App.edition()==='enterprise'?App.icon('check'):''}</div>` : ''}
+      <div class="cmdk__item ${App.edition()==='standard'?'is-active':''}" onclick="App.setEdition('standard')">${App.icon('grid')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Standard</div><div style="font-size:11px;color:var(--muted)">Cloud-hosted · managed</div></div>${App.edition()==='standard'?App.icon('check'):''}</div>
+      <div class="cmdk__item ${App.edition()==='enterprise'?'is-active':''}" onclick="App.setEdition('enterprise')">${App.icon('lock')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Enterprise · on-prem</div><div style="font-size:11px;color:var(--muted)">Your infra · data never leaves</div></div>${App.edition()==='enterprise'?App.icon('check'):''}</div>` : ''}
       <div class="divider" style="margin:8px 0"></div>
       <div class="cmdk__item" onclick="App.tour.start()">${App.icon('sparkles')}<span>Take a tour</span></div>
       <div class="cmdk__item" onclick="App.logout()">${App.icon('logout')}<span>Log out</span></div>`;

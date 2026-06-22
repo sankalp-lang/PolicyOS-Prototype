@@ -124,24 +124,46 @@ chk(!/privilege leave|18 \/ yr/i.test(leaveAns.html), 'Category disable: Tara no
 hrCat.enabled = true;
 chk(App.visiblePolicies(admin).some(function(p){return p.id==='P-LEAVE';}), 'Category re-enable: HR leave policy returns');
 
-// Edition gating: Enterprise (on-prem) = policies only, no connectors/company-brain
+// Source availability is driven by CONNECTED CONNECTORS, not the edition
+chk(App.hasSource('keka') && App.hasSource('jira'), 'Sources: Keka HRMS + Jira ship connected by default');
+// Connectors now ship in BOTH editions (no longer hidden in enterprise)
 try { localStorage.setItem('tara_edition','enterprise'); } catch(e){}
-var entPeople = App.askTara("who's in the engineering team", admin);
-chk(!(entPeople.sources||[]).some(function(s){return s.kind==='hrms';}), 'Enterprise: people query NOT answered from HRMS');
-var entJira = App.askTara('who is working on policyos', admin);
-chk(!(entJira.sources||[]).some(function(s){return s.kind==='jira';}), 'Enterprise: work query NOT answered from Jira');
-var entPol = App.askTara('personal loan eligibility criteria', admin);
-chk(/700|cibil/i.test(entPol.html), 'Enterprise: policy query still works');
-var entCtx = App.llm.buildContext(admin);
-chk(!/WORK IN PROGRESS/.test(entCtx) && /POLICIES/.test(entCtx), 'Enterprise: LLM context drops Jira, keeps policies');
-var entNav = App.navModel(admin);
-chk(!entNav.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Enterprise: Connectors hidden from nav');
+chk(App.navModel(admin).groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Enterprise: Connectors present in nav (connectors now in both editions)');
 try { localStorage.setItem('tara_edition','standard'); } catch(e){}
+// With HRMS + Jira connected, people/work questions answer from those sources (either edition)
+var pplOn = App.askTara('who is in office today', admin);
+chk((pplOn.sources||[]).some(function(s){return s.kind==='hrms';}), 'Connected: people query answered from HRMS');
+var workOn = App.askTara('who is working on policyos', admin);
+chk((workOn.sources||[]).some(function(s){return s.kind==='jira';}), 'Connected: work query answered from Jira');
+chk(/WORK IN PROGRESS/.test(App.llm.buildContext(admin)), 'Connected: LLM context includes Jira');
+// Disconnect HRMS + Jira → those questions are no longer answerable; policies still work
+var _keka = DB.connectors.find(function(c){return c.id==='keka';}), _jira = DB.connectors.find(function(c){return c.id==='jira';});
+var _ks = _keka.status, _js = _jira.status; _keka.status='available'; _jira.status='available';
+chk(!App.hasSource('keka') && !App.hasSource('jira'), 'Disconnect: Keka + Jira no longer report as connected');
+var offPeople = App.askTara('who is in office today', admin);
+chk(!(offPeople.sources||[]).some(function(s){return s.kind==='hrms';}), 'Disconnected: people query NOT answered from HRMS');
+var offCtx = App.llm.buildContext(admin);
+chk(!/WORK IN PROGRESS/.test(offCtx) && /POLICIES/.test(offCtx), 'Disconnected: LLM context drops Jira, keeps policies');
+chk(/leave/i.test(App.askTara("what's the leave policy", admin).html), 'Disconnected: policy query still works');
+_keka.status=_ks; _jira.status=_js; // restore connected state
 
-// Standard nav: admin-only Administration + Connectors; Assessments under Company Brain
+// Prompts/descriptions derive from connected sources
+chk(/HRMS/.test(App.sourcePhrase()) && /Jira/.test(App.sourcePhrase()) && /policies/.test(App.sourcePhrase()), 'Prompts: sourcePhrase names connected sources + policies');
+chk(App.suggestPrompts(admin).some(function(p){return p.tag==='Jira';}) && App.suggestPrompts(admin).some(function(p){return p.tag==='Policy';}), 'Prompts: suggestions span connected sources');
+
+// Model config: selecting a model persists & shows even without a key (demo); a key makes it live
+try { localStorage.setItem('tara_llm_cfg', JSON.stringify({primary:{provider:'anthropic',model:'claude-opus-4-8',key:''}})); } catch(e){}
+chk(App.llm.selected()===true && App.llm.configured()===false, 'Model: keyless selection is "selected" but not live');
+chk(/Claude Opus 4\.8/.test(App.llm.statusLabel()) && /demo/.test(App.llm.statusLabel()), 'Model: header shows the chosen model (demo tag, no key)');
+try { localStorage.setItem('tara_llm_cfg', JSON.stringify({primary:{provider:'anthropic',model:'claude-opus-4-8',key:'sk-ant-x'}})); } catch(e){}
+chk(App.llm.configured()===true && /Claude Opus 4\.8/.test(App.llm.statusLabel()) && !/demo/.test(App.llm.statusLabel()), 'Model: with a key the header shows it live (no demo tag)');
+try { localStorage.setItem('tara_llm_cfg','{}'); } catch(e){}
+chk(/Demo mode/.test(App.llm.statusLabel()), 'Model: no selection falls back to Demo mode');
+
+// Nav: admin-only Administration + Connectors; PM excluded
 var navAdmin = App.navModel(admin), navPM = App.navModel(personas.find(function(p){return p.id==='THQ0101';}));
 chk(navAdmin.groups.some(function(g){return g.title==='Administration' && g.items.some(function(i){return i.id==='usersaccess';});}), 'Admin sees "Users & access" under Administration');
-chk(navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Admin (standard) sees Connectors');
+chk(navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Admin sees Connectors');
 chk(!navPM.groups.some(function(g){return g.title==='Administration';}), 'Policy Manager does NOT see Administration');
 chk(!navPM.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Policy Manager does NOT see Connectors');
 chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='assessments';});}), 'Assessments lives under Company Brain');

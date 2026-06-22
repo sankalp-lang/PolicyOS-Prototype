@@ -173,6 +173,14 @@ chk(/approval rate|impact simulation/i.test(simAns.html), 'Tara: what-if query r
 var simDenied = App.askTara('what if we raise the personal loan cibil cutoff to 760', staff);
 chk(!/approval rate|impact simulation/i.test(simDenied.html), 'Tara: staff (no PL access) does NOT get the simulation');
 
+// Assessments — staff takes a test, admin sees the score
+chk(typeof App.assessmentsView.take === 'function' && typeof App.assessmentsView.submit === 'function' && typeof App.assessmentsView._subs === 'function', 'Assessments: staff take/submit + submission store present');
+chk(!App.assessmentsView._subForUser('AS1','THQ0125'), 'Assessments: staff has no submission before taking');
+App.assessmentsView._subs('AS1').push({ userId:'THQ0125', score:80, correct:4, total:5, attempted:5, passed:true, answers:[], date:'21 Jun 2026' });
+chk(!!App.assessmentsView._subForUser('AS1','THQ0125') && App.assessmentsView._subForUser('AS1','THQ0125').score===80, 'Assessments: staff submission recorded & retrievable (admin can read it)');
+var asErr=null; App.state.user=admin; try { App.assessmentsView.open('AS1'); App.closeModal(); } catch(e){ asErr=e; }
+chk(!asErr, 'Assessments: admin detail renders with the real staff submission: '+(asErr||''));
+
 print('=== RBAC semantics ===');
 print(semFails.length ? 'SEMANTIC FAILS:\n'+semFails.join('\n') : 'RBAC semantics OK (deny + allow paths verified)');
 print('=== render: '+routes.length+' views x '+personas.length+' personas ===');

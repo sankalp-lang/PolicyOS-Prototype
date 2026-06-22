@@ -8,16 +8,14 @@ App.registerView('assessments', {
     /* ---------- Staff "My Assessments" (simplified) ---------- */
     if (!isManager) {
       const mine = DB.assessments.filter(a => a.status !== 'Draft');
-      // deterministic per-user assignment state from id hash
+      // assignment state — prefer the user's REAL submission; otherwise it's Pending (takeable)
       const stateFor = (a) => {
-        const seed = (u.id + a.id).split('').reduce((x, c) => x * 31 + c.charCodeAt(0) | 0, 7);
-        if (a.status === 'Completed') return { label: 'Passed', kind: 'green', score: 80 + (Math.abs(seed) % 16) };
-        return (Math.abs(seed) % 3 === 0)
-          ? { label: 'Completed', kind: 'green', score: 70 + (Math.abs(seed) % 26) }
-          : { label: 'Pending', kind: 'amber', score: null };
+        const sub = App.assessmentsView._subForUser(a.id, u.id);
+        if (sub) return { label: sub.passed ? 'Passed' : 'Completed', kind: sub.passed ? 'green' : 'amber', score: sub.score, real: true };
+        return { label: 'Pending', kind: 'amber', score: null };
       };
-      const pending = mine.filter(a => stateFor(a).label === 'Pending').length;
-      const done = mine.length - pending;
+      const done = mine.filter(a => stateFor(a).real).length;
+      const pending = mine.length - done;
       const cards = mine.map(a => {
         const s = stateFor(a);
         const cat = DB.categories.find(c => c.name === a.category);
@@ -28,7 +26,7 @@ App.registerView('assessments', {
             <div class="muted" style="font-size:12.5px;margin-top:4px">${App.esc(a.category)} · Window ${a.start} – ${a.end} · Passing ${a.passing}%</div>
             ${s.score != null ? `<div class="muted" style="font-size:12.5px;margin-top:4px">Your score: <b style="color:var(--ink)">${s.score}%</b></div>` : ''}
           </div>
-          <button class="btn ${s.label === 'Pending' ? 'btn--primary' : ''} btn--sm" onclick="App.assessmentsView.takeStub('${a.id}')">${s.label === 'Pending' ? App.icon('arrow') + ' Take test' : App.icon('eye') + ' Review'}</button>
+          <button class="btn ${s.real ? '' : 'btn--primary'} btn--sm" onclick="App.assessmentsView.take('${a.id}')">${s.real ? App.icon('eye') + ' Review' : App.icon('arrow') + ' Take test'}</button>
         </div>`;
       }).join('');
 
@@ -163,9 +161,20 @@ App.assessmentsView = {
         </div>
       </div>`).join('');
 
-    // synthesize a results table from participants who are "done"
-    const pool = DB.employees.slice(0, Math.max(a.done, 4));
-    const resultRows = pool.slice(0, a.done || 4).map((e, i) => {
+    // real staff submissions first (highlighted), then synthesized history
+    const subs = App.assessmentsView._subs(a.id);
+    const subIds = new Set(subs.map(s => s.userId));
+    const realRows = subs.map(s => { const e = App.emp(s.userId); const nm = e ? e.name : s.userId;
+      return `<tr style="background:var(--brand-50)">
+        <td><div class="cell-person">${e ? App.ui.avatar(e, 'sm') : ''}<span class="cell-strong">${App.esc(nm)}</span>${App.ui.pill('New', 'blue')}</div></td>
+        <td class="muted">${App.esc(s.date)}</td>
+        <td><b>${s.score}%</b></td>
+        <td>${s.attempted}/${s.total}</td>
+        <td>${App.ui.pill(s.passed ? 'Passed' : 'Failed', s.passed ? 'green' : 'red')}</td>
+      </tr>`; }).join('');
+    const synthCount = Math.max(0, (a.done || 0) - subs.length);
+    const pool = DB.employees.filter(e => !subIds.has(e.id)).slice(0, synthCount);
+    const synthRows = pool.map((e) => {
       const seed = (a.id + e.id).split('').reduce((x, c) => x * 31 + c.charCodeAt(0) | 0, 7);
       const score = 55 + (Math.abs(seed) % 46);
       const passed = score >= a.passing;
@@ -179,7 +188,8 @@ App.assessmentsView = {
         <td>${App.ui.pill(passed ? 'Passed' : 'Failed', passed ? 'green' : 'red')}</td>
       </tr>`;
     }).join('');
-    const resultsTab = a.done
+    const resultRows = realRows + synthRows;
+    const resultsTab = (a.done || subs.length)
       ? `<div class="row" style="margin-bottom:12px;justify-content:flex-end"><button class="btn btn--sm" onclick="App.toast('Exporting results to CSV (demo)')">${App.icon('download')} Export</button></div>
          <div class="table-wrap"><table class="tbl"><thead><tr><th>User name</th><th>Date</th><th>Score</th><th>Questions attempted</th><th>Status</th></tr></thead><tbody>${resultRows}</tbody></table></div>`
       : App.ui.empty('chart', 'No submissions yet', 'Results will appear here once participants complete the test.');
@@ -220,9 +230,65 @@ App.assessmentsView = {
     });
   },
 
-  takeStub(id) {
-    const a = DB.assessments.find(x => x.id === id);
-    App.toast('Opening "' + (a ? a.name : 'assessment') + '" (demo)');
+  /* ---------------- staff: take an assessment (interactive, graded, recorded) ---------------- */
+  _subs(id) { if (!App.state.assessmentSubs) App.state.assessmentSubs = {}; if (!App.state.assessmentSubs[id]) App.state.assessmentSubs[id] = []; return App.state.assessmentSubs[id]; },
+  _subForUser(id, uid) { return (App.state.assessmentSubs && App.state.assessmentSubs[id] || []).find(s => s.userId === uid); },
+
+  take(id) {
+    const a = DB.assessments.find(x => x.id === id); if (!a) return;
+    const existing = App.assessmentsView._subForUser(id, App.currentUser().id);
+    if (existing) return App.assessmentsView._review(id, existing, false);
+    const qs = App.assessmentsHelpers.questionsFor(a);
+    const body = `<div class="info-banner">${App.icon('clipboard')} <span><strong>${qs.length} questions</strong> · passing ${a.passing}%. Choose one answer per question, then submit.</span></div>
+      ${qs.map((item, i) => `<div class="card card--pad" style="margin-bottom:12px">
+        <div class="row gap-8" style="align-items:flex-start"><span class="tag">Q${i + 1}</span><b style="font-size:14px;flex:1">${App.esc(item.q)}</b></div>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+          ${item.opts.map((o, oi) => `<label class="minirow" style="border-bottom:none;padding:8px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer">
+            <input type="radio" name="tq${i}" value="${oi}"/>
+            <span style="width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--surface-2);color:var(--muted)">${String.fromCharCode(65 + oi)}</span>
+            <span style="flex:1">${App.esc(o)}</span>
+          </label>`).join('')}
+        </div></div>`).join('')}`;
+    App.openModal({ title: a.name, sub: a.category + ' assessment · passing ' + a.passing + '%', lg: true, body,
+      footer: `<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.assessmentsView.submit('${id}')">${App.icon('check')} Submit answers</button>` });
+  },
+  submit(id) {
+    const a = DB.assessments.find(x => x.id === id); if (!a) return;
+    const u = App.currentUser();
+    const qs = App.assessmentsHelpers.questionsFor(a);
+    let correct = 0, answered = 0; const answers = [];
+    qs.forEach((item, i) => {
+      const sel = document.querySelector('input[name="tq' + i + '"]:checked');
+      const pick = sel ? +sel.value : null;
+      answers.push(pick); if (pick != null) answered++; if (pick === item.correct) correct++;
+    });
+    const score = Math.round(100 * correct / qs.length);
+    const sub = { userId: u.id, score, correct, total: qs.length, attempted: answered, passed: score >= a.passing, answers, date: '21 Jun 2026' };
+    const arr = App.assessmentsView._subs(id);
+    const idx = arr.findIndex(s => s.userId === u.id);
+    if (idx >= 0) arr[idx] = sub; else { arr.push(sub); a.done = Math.min(a.participants, a.done + 1); }
+    App.assessmentsView._review(id, sub, true);
+  },
+  _review(id, sub, justSubmitted) {
+    const a = DB.assessments.find(x => x.id === id); const qs = App.assessmentsHelpers.questionsFor(a);
+    const head = `<div class="kpi" style="text-align:center;margin-bottom:18px"><div class="kpi__label">Your score</div>
+      <div class="kpi__val" style="font-size:36px;color:${sub.passed ? 'var(--green-700)' : 'var(--red-700)'}">${sub.score}%</div>
+      <div class="kpi__sub">${App.ui.pill(sub.passed ? 'Passed' : 'Did not pass', sub.passed ? 'green' : 'red')} · ${sub.correct}/${sub.total} correct · passing ${a.passing}%</div></div>`;
+    const review = qs.map((item, i) => {
+      const pick = sub.answers ? sub.answers[i] : null; const right = pick === item.correct;
+      return `<div class="card card--pad" style="margin-bottom:10px">
+        <div class="row gap-8" style="align-items:flex-start"><span class="tag">Q${i + 1}</span><b style="flex:1;font-size:13.5px">${App.esc(item.q)}</b>${App.ui.pill(right ? 'Correct' : 'Wrong', right ? 'green' : 'red')}</div>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">${item.opts.map((o, oi) => {
+          const isC = oi === item.correct, isP = oi === pick;
+          const bg = isC ? 'var(--green-50)' : (isP ? 'var(--red-50)' : 'var(--surface)');
+          const bd = isC ? '#bcd3c2' : (isP ? '#e3c4bf' : 'var(--line)');
+          return `<div class="minirow" style="border-bottom:none;padding:7px 10px;border:1px solid ${bd};border-radius:8px;background:${bg}"><span style="flex:1">${App.esc(o)}</span>${isC ? App.ui.pill('Correct', 'green') : (isP ? App.ui.pill('Your answer', 'red') : '')}</div>`;
+        }).join('')}</div></div>`;
+    }).join('');
+    App.openModal({ title: (justSubmitted ? 'Submitted · ' : 'Your result · ') + a.name, sub: 'Graded instantly · recorded for your admin', lg: true,
+      body: head + `<div class="login__label">Answer review</div>` + review,
+      footer: `<button class="btn btn--primary" onclick="App.closeModal();App.navigate('assessments')">Done</button>` });
+    if (justSubmitted) App.toast('Submitted — you scored ' + sub.score + '%', sub.passed ? 'ok' : 'warn');
   },
 
   /* ---------------- create wizard ---------------- */

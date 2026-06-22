@@ -564,6 +564,9 @@ pre.code .k{color:#b3a7e0;} pre.code .s{color:#9cc7a6;} pre.code .c{color:#8a847
 .shell { transition:grid-template-columns .22s cubic-bezier(.4,0,.2,1); }
 .shell.nav-collapsed { grid-template-columns:0 1fr; }
 .shell.nav-collapsed .sidebar { opacity:0; pointer-events:none; }
+/* when the sidebar is hidden, let content reclaim the freed width instead of sitting narrow + centered */
+.shell.nav-collapsed .content { padding-left:40px; padding-right:40px; }
+.shell.nav-collapsed .page { max-width:1600px; }
 .nav__group { margin-bottom:2px; }
 .nav__grouphead { display:flex; align-items:center; gap:8px; width:100%; padding:9px 10px; background:none; border:none; cursor:pointer; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); transition:.13s; }
 .nav__grouphead:hover { color:var(--muted); }

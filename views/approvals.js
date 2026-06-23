@@ -211,6 +211,10 @@ App.approvalsView = {
       ? `<div class="info-banner" style="margin-top:14px;margin-bottom:0">${App.icon('shield')} <span><strong>Regulatory check:</strong> ${App.esc(a.complianceFlag)}</span></div>`
       : '';
 
+    const cites = (a.citations && a.citations.length && App.pdf)
+      ? `<div class="field" style="margin-top:14px;margin-bottom:0"><label>Source documents — open at the cited page</label><div class="row gap-8 wrap">${a.citations.map(ct => App.pdf.cite(ct.kind, ct.id, ct.anchor, ct.kind === 'circular' ? ('Circular ' + (a.sourceRef || '')) : null)).join('')}</div></div>`
+      : '';
+
     let levels = '';
     if (wf) {
       const lv = wf.levels.map(l => {
@@ -236,7 +240,7 @@ App.approvalsView = {
       sub: a.id + ' · ' + a.type + ' · raised by ' + by.name + ' on ' + a.on,
       lg: true,
       body: `<div class="row gap-8" style="margin-bottom:14px;flex-wrap:wrap">${this.prioPill(a.priority)} ${App.ui.pill(a.status,'violet')} ${p?App.ui.pill(p.name+' · '+p.version,'gray'):''}</div>
-        ${diff}${rationale}${compliance}${this.impactBlock(a)}${levels}`,
+        ${diff}${rationale}${compliance}${cites}${this.impactBlock(a)}${levels}`,
       footer
     });
   },

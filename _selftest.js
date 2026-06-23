@@ -39,7 +39,7 @@ var rd = (typeof readFile !== 'undefined') ? readFile : read;
 function load(p){ try { (0, eval)(rd(p)); return null; } catch(e){ return p + ' :: ' + e; } }
 
 var loadErrors = [];
-['data.js','core.js','llm.js','sim.js','tour.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
+['data.js','core.js','llm.js','sim.js','pdf.js','tour.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
 
 var viewFiles = ['dashboard','copilot','policies','directory','access','usersaccess','polygpt','rulesense',
   'approvals','regulatory','usermgmt','category','bredecoder','insightgen','assessments','connectors'];
@@ -185,6 +185,43 @@ chk(!!DB.circulars && DB.circulars.length >= 3, 'Regulatory: circular feed prese
 chk(DB.categories.find(function(c){return c.name==='Compliance';}).subs.indexOf('Regulatory Updates') >= 0, 'Regulatory: Compliance has the "Regulatory Updates" sub-category');
 chk(App.navModel(admin).groups.some(function(g){return g.items.some(function(i){return i.id==='regulatory';});}), 'Regulatory: nav item present under Policy Management');
 chk(typeof App.regulatoryView === 'object' && typeof App.regulatoryView.createChange === 'function', 'Regulatory: view + createChange present');
+
+// ---- Document viewer (App.pdf) + page citations ----
+chk(typeof App.pdf === 'object' && typeof App.pdf.cite === 'function' && typeof App.pdf.build === 'function', 'PDF: App.pdf viewer engine present');
+var _pdoc = App.pdf.build('policy','P-PL');
+chk(_pdoc && _pdoc.pages.length >= 3, 'PDF: policy paginates (purpose/params/rules/governance)');
+chk(App.pdf.pageOf(_pdoc,'Minimum CIBIL score') === 2, 'PDF: a fact citation resolves to the parameters page');
+chk(/p\.2/.test(App.pdf.cite('policy','P-PL','Minimum CIBIL score')) && /class="cite"/.test(App.pdf.cite('policy','P-PL','Minimum CIBIL score')), 'PDF: cite() chip carries the page number');
+var _cdoc = App.pdf.build('circular','INC-RBI-58');
+chk(_cdoc && _cdoc.pages.length >= 6, 'PDF: circular builds pages from clauses');
+
+// ---- Manual circular ingest → multi-policy gap analysis → Approvals ----
+chk(DB.incomingCirculars && DB.incomingCirculars.length >= 1, 'Regulatory: uploadable (incoming) circulars present');
+var _inc = DB.incomingCirculars.find(function(c){return c.id==='INC-RBI-58';});
+chk(_inc && _inc.clauses.some(function(cl){return (cl.impact||[]).some(function(i){return i.policyId==='P-PL';});}), 'Regulatory: incoming clause maps to an existing policy');
+App.regulatoryView._analyze('INC-RBI-58');
+var _as = App.regulatoryView.assessment;
+chk(_as && _as.suggestions.length >= 5, 'Regulatory: analysis produces per-clause suggestions');
+chk(_as.suggestions.some(function(s){return s.impact && s.impact.approvalDelta!=null;}), 'Regulatory: lending suggestions carry a simulated impact');
+var _affected = {}; _as.suggestions.filter(function(s){return s.status!=='nogap';}).forEach(function(s){_affected[s.imp.policyId]=1;});
+chk(Object.keys(_affected).length >= 2, 'Regulatory: one circular affects multiple policies');
+var _before = DB.approvals.length;
+var _pending = _as.suggestions.filter(function(s){return s.status==='pending';}).slice(0,2).map(function(s){return s.key;});
+try { App.regulatoryView.sendForApproval(_pending); } catch(e){}
+chk(DB.approvals.length === _before + _pending.length, 'Regulatory: send-for-approval pushes requests into Approvals');
+chk(DB.approvals[0].type==='Regulatory Change' && DB.approvals[0].citations && DB.approvals[0].citations.length===2 && !!DB.approvals[0].sourceRef, 'Regulatory: approval carries policy+circular citations and source ref');
+chk(_as.suggestions.filter(function(s){return s.key===_pending[0];})[0].status==='queued', 'Regulatory: sent suggestion marked queued');
+// re-entry must NOT reset state nor allow duplicate sends (cached assessment)
+App.regulatoryView.assessment = null;       // "Back to circulars"
+App.regulatoryView._analyze('INC-RBI-58');  // re-open via the uploaded strip
+chk(App.regulatoryView.assessment === _as, 'Regulatory: re-opening reuses the cached assessment');
+chk(App.regulatoryView.assessment.suggestions.filter(function(s){return s.key===_pending[0];})[0].status==='queued', 'Regulatory: queued state survives re-entry');
+var _before2 = DB.approvals.length;
+try { App.regulatoryView.sendForApproval(_pending); } catch(e){}
+chk(DB.approvals.length === _before2, 'Regulatory: re-sending queued suggestions adds no duplicate approvals');
+App.regulatoryView._analyze('INC-SEBI-19');
+chk(App.regulatoryView.assessment.suggestions.some(function(s){return s.status==='nogap';}), 'Regulatory: no-gap clauses flagged as no change');
+App.regulatoryView.assessment = null; App.regulatoryView._uploaded = []; App.regulatoryView._assessments = {};
 var beforeN = DB.approvals.length; App.state.user = admin;
 App.regulatoryView.createChange('CIR-36');
 chk(DB.approvals.length === beforeN + 1 && /RBI/.test(DB.approvals[0].complianceFlag||'') && !!DB.approvals[0].impact, 'Regulatory: createChange raises an Approval with citation + projected impact');

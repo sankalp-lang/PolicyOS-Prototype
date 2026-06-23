@@ -311,7 +311,56 @@ window.DB = (function () {
       suggestion:null, simOverride:null }
   ];
 
+  /* ---------- Incoming (manually uploaded) circulars — the manual-ingest counterpart to the auto feed.
+     NBFCs face far more regulation than can be embedded, so a compliance owner uploads the PDF and
+     Tara checks it against the WHOLE policy library. One circular usually touches several policies;
+     each clause carries the page it sits on (for citation) and the per-policy redline it implies. ---------- */
+  const incomingCirculars = [
+    { id:'INC-RBI-58', regulator:'RBI', ref:'RBI/2026-27/58', title:'Master Direction – Responsible Lending Conduct (Retail & MSME)',
+      date:'18 Jun 2026', pages:7, file:'RBI_MD_Responsible_Lending_2026.pdf',
+      summary:'Consolidated direction tightening unsecured retail underwriting, LTV discipline on secured retail, MSME credit-decision turnaround and borrower cooling-off. Supersedes select earlier circulars and applies to all NBFCs from the next quarter.',
+      clauses:[
+        { id:'C1', page:2, ref:'¶2.3', topic:'Unsecured retail bureau floor',
+          text:'Lenders shall not originate unsecured personal credit to borrowers with a bureau score below 720, save for fully-secured or staff exposures.',
+          impact:[ { policyId:'P-PL', anchor:'Minimum CIBIL score', current:'700', suggested:'720',
+                     rationale:'Clause ¶2.3 sets a hard 720 floor for unsecured personal credit; the policy floor of 700 is below the mandate.', sim:{ minCibil:720 } } ] },
+        { id:'C2', page:3, ref:'¶3.1', topic:'Personal-loan FOIR ceiling',
+          text:'Fixed-obligation-to-income ratio (FOIR) for unsecured personal credit shall not exceed 50% at origination.',
+          impact:[ { policyId:'P-PL', anchor:'Max FOIR', current:'55%', suggested:'50%',
+                     rationale:'Clause ¶3.1 caps FOIR at 50%; the policy permits 55%.', sim:{ maxFoir:0.50 } } ] },
+        { id:'C3', page:4, ref:'¶4.2', topic:'Digital-loan cooling-off period',
+          text:'Every digital loan shall carry a borrower cooling-off period of not less than three (3) days from disbursal, with exit allowed without penalty.',
+          impact:[ { policyId:'P-PL', anchor:'Cooling-off period', isNew:true, current:'No cooling-off clause', suggested:'Add 3-day cooling-off (no-penalty exit)',
+                     rationale:'Clause ¶4.2 mandates a 3-day cooling-off window; the Personal Loan policy is currently silent on it.' } ] },
+        { id:'C4', page:5, ref:'¶5.4', topic:'Secured retail LTV discipline',
+          text:'Loan-to-value on two-wheeler advances shall be capped at 85% of on-road value.',
+          impact:[ { policyId:'P-2W', anchor:'Max LTV', current:'90%', suggested:'85%',
+                     rationale:'Clause ¶5.4 caps two-wheeler LTV at 85%; the policy permits 90%.', sim:{ maxLtv:0.85 } } ] },
+        { id:'C5', page:6, ref:'¶6.1', topic:'MSME credit-decision turnaround',
+          text:'A documented credit decision on MSME applications shall be communicated to the applicant within fourteen (14) calendar days.',
+          impact:[ { policyId:'P-MSME', anchor:'Credit-decision turnaround', isNew:true, current:'No decision TAT defined', suggested:'14-day decision TAT',
+                     rationale:'Clause ¶6.1 requires a 14-day decision TAT; the MSME policy defines none.' } ] },
+        { id:'C6', page:6, ref:'¶6.5', topic:'Periodic KYC cadence',
+          text:'Periodic KYC for high-risk customers shall be carried out at least once every 12 months.',
+          impact:[ { policyId:'P-KYC', anchor:'Re-KYC', current:'High-risk: 2 yrs', suggested:'High-risk: 1 yr',
+                     rationale:'Clause ¶6.5 shortens high-risk re-KYC to 12 months; consistent with the in-flight KYC change.' } ] }
+      ] },
+    { id:'INC-SEBI-19', regulator:'SEBI', ref:'SEBI/HO/2026/19', title:'Cyber Resilience & Vendor Access Controls',
+      date:'12 Jun 2026', pages:4, file:'SEBI_Cyber_Resilience_2026.pdf',
+      summary:'Strengthens periodic access reviews and multi-factor authentication for regulated entities and their outsourced vendors.',
+      clauses:[
+        { id:'C1', page:2, ref:'¶2.1', topic:'Vendor access review cadence',
+          text:'Access granted to outsourced vendors shall be reviewed at least semi-annually and revoked on contract exit.',
+          impact:[ { policyId:'P-ISEC', anchor:'Vendor access review', isNew:true, current:'Annual vendor access review', suggested:'Semi-annual vendor access review',
+                     rationale:'Clause ¶2.1 requires semi-annual vendor access reviews; the policy does this annually.' } ] },
+        { id:'C2', page:3, ref:'¶3.2', topic:'MFA on privileged access',
+          text:'Multi-factor authentication shall be mandatory for all privileged and remote access.',
+          impact:[ { policyId:'P-ISEC', anchor:'MFA', current:'Mandatory', suggested:'Mandatory (already compliant)',
+                     rationale:'The Information Security policy already mandates MFA — no change required.', noGap:true } ] }
+      ] }
+  ];
+
   return { employees, compensation, teams, jiraProjects, jiraIssues, categories, policies,
            users, roleLabels, workflows, approvals, assessments, insights, rejectionReasons,
-           connectors, company, simParams, testBase, circulars };
+           connectors, company, simParams, testBase, circulars, incomingCirculars };
 })();

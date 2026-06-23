@@ -56,7 +56,7 @@ App.policiesView = {
       title: p.name, sub: p.category+' · '+p.sub+' · '+p.version, lg:true,
       body: `<div class="row gap-8" style="margin-bottom:14px;flex-wrap:wrap">${App.ui.statusPill(p.status)} ${App.ui.pill('Owner: '+owner.name,'gray')} <span class="muted" style="font-size:12px;align-self:center">Updated ${p.updated}</span></div>
         <div class="grid" style="grid-template-columns:1.3fr 1fr;gap:16px">
-          <div class="pdf-ph"><div class="pdf-ph__title"></div><div class="pdf-ph__bar w90"></div><div class="pdf-ph__bar w70"></div><div class="pdf-ph__bar w80"></div><div class="pdf-ph__bar w50"></div><div style="height:14px"></div><div class="pdf-ph__bar w80"></div><div class="pdf-ph__bar w90"></div><div class="pdf-ph__bar w70"></div><p class="muted" style="text-align:center;margin-top:18px;font-size:12px">${App.esc(p.name)}.pdf · embedded viewer</p></div>
+          <div id="polPdfPane" class="reg-review__pdf" style="max-height:440px"></div>
           <div>
             <div class="card__body" style="padding:0 0 10px"><b style="font-size:12.5px">Key parameters</b></div>${facts}
             <div class="divider"></div>
@@ -68,6 +68,7 @@ App.policiesView = {
         ${canRules?`<button class="btn btn--primary" onclick="App.closeModal();App.navigate('rulesense',{policy:'${p.id}'})">${App.icon('code')} View Rules</button>`:''}
         <button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('Tell me about ${p.name.replace(/'/g,"")}')">${App.icon('sparkles')} Ask Tara</button>`
     });
+    if (App.pdf) App.pdf.renderInto('polPdfPane', 'policy', p.id);
   },
   add() {
     App.openModal({

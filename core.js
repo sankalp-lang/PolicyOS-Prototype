@@ -285,7 +285,9 @@ window.App = (function () {
                    sources:[{kind:'locked',label:p.name+' · no access'}] };
         }
         const facts = Object.entries(p.facts).map(([k,v]) => `<div class="minirow"><span class="muted">${App.esc(k)}</span><span class="spacer" style="flex:1"></span><b>${App.esc(v)}</b></div>`).join('');
-        return { html:`<p>${App.esc(p.summary)}</p>${ansCard(p.name+' · '+p.version,'shield',facts)}`,
+        const anchorKey = (hit && Object.keys(p.facts).find(k => hit.kw.some(w => k.toLowerCase().includes(w.trim().split(' ')[0])))) || Object.keys(p.facts)[0];
+        const cite = App.pdf ? `<div class="answer-cite"><span class="muted" style="font-size:12px">Cited from</span> ${App.pdf.cite('policy', p.id, anchorKey, p.name)}</div>` : '';
+        return { html:`<p>${App.esc(p.summary)}</p>${ansCard(p.name+' · '+p.version,'shield',facts)}${cite}`,
                  sources:[{kind:'policy',label:p.name+' ('+p.version+')'}] };
       }
       // generic policy — list what THIS user can see
@@ -479,6 +481,7 @@ window.App = (function () {
   /* ---------------- router ---------------- */
   App.navigate = (route, params) => {
     if (!App.views[route]) route = 'dashboard';
+    if (App.pdf) App.pdf.close();
     App.state.route = route; App.state.params = params || {};
     App.renderNav();
     const def = App.views[route];
@@ -500,7 +503,7 @@ window.App = (function () {
     $('#overlay').classList.add('open');
     $('#overlay').onclick = e => { if (e.target.id==='overlay') App.closeModal(); };
   };
-  App.closeModal = () => { $('#overlay').classList.remove('open'); $('#modalHost').innerHTML=''; };
+  App.closeModal = () => { $('#overlay').classList.remove('open'); $('#modalHost').innerHTML=''; if (App.pdf) App.pdf.close(); };
 
   /* ---------------- toast ---------------- */
   App.toast = (msg, kind) => {

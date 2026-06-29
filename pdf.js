@@ -1,5 +1,5 @@
 /* ============================================================
-   PolicyOS · Tara — embedded document viewer (App.pdf)
+   PolicyOS · Tara - embedded document viewer (App.pdf)
    No real PDFs in the prototype: we synthesize a paginated, page-numbered
    document from a policy's own content (summary → parameters → rules → governance)
    or from an uploaded circular's clauses. Every answer/redline that quotes a page
@@ -40,7 +40,7 @@
     const ensure = n => { while (pages.length < n) pages.push({ heading: '', blocks: [], _cl: [] }); return pages[n - 1]; };
     ensure(1); pages[0].heading = '1. Background'; pages[0].blocks.push({ type: 'p', text: c.summary });
     (c.clauses || []).forEach(cl => { const pg = ensure(cl.page); pg.blocks.push({ type: 'clause', anchor: cl.id, n: cl.ref, text: cl.text }); pg._cl.push(cl); });
-    pages.forEach((pg, i) => { if (i === 0 || !pg._cl) return; if (pg._cl.length === 1) pg.heading = pg._cl[0].ref + ' — ' + pg._cl[0].topic; else if (pg._cl.length > 1) pg.heading = pg._cl.map(x => x.ref).join(' · ') + ' — multiple provisions'; });
+    pages.forEach((pg, i) => { if (i === 0 || !pg._cl) return; if (pg._cl.length === 1) pg.heading = pg._cl[0].ref + ' - ' + pg._cl[0].topic; else if (pg._cl.length > 1) pg.heading = pg._cl.map(x => x.ref).join(' · ') + ' - multiple provisions'; });
     while (pages.length < (c.pages || pages.length)) pages.push({ heading: '(continued)', blocks: [{ type: 'p', text: '…' }] });
     return { kind: 'circular', title: c.title, file: c.file || (c.ref.replace(/[^a-z0-9]+/gi, '_') + '.pdf'), pages };
   }
@@ -48,7 +48,7 @@
   function amendmentDoc(a) {
     const pages = [];
     pages.push({ heading: '1. Background', blocks: [{ type: 'p', text: a.regulator + ' ' + a.ref + ' · ' + a.date }, { type: 'p', text: a.summary }] });
-    const blocks = (a.changes || []).map(ch => ({ type: 'clause', anchor: ch.id, n: ch.clauseRef, text: ch.section + ' — ' + (ch.isNew ? 'shall introduce: ' : 'shall be: ') + ch.suggested + '. ' + ch.rationale }));
+    const blocks = (a.changes || []).map(ch => ({ type: 'clause', anchor: ch.id, n: ch.clauseRef, text: ch.section + ' - ' + (ch.isNew ? 'shall introduce: ' : 'shall be: ') + ch.suggested + '. ' + ch.rationale }));
     pages.push({ heading: '2. Directions', blocks: blocks });
     return { kind: 'amendment', title: a.title, file: a.ref.replace(/[^a-z0-9]+/gi, '_') + '.pdf', pages: pages };
   }
@@ -151,7 +151,7 @@
     },
     closeFull() { const w = document.getElementById('pdfFull'); if (w) w.classList.remove('show'); },
 
-    // inline clickable citation chip — "📄 Personal Loan Credit Policy · p.2"
+    // inline clickable citation chip - "📄 Personal Loan Credit Policy · p.2"
     cite(kind, id, anchorOrPage, label) {
       const doc = build(kind, id); const pg = pageOf(doc, anchorOrPage);
       const lab = label || (doc.title.length > 28 ? doc.title.slice(0, 26) + '…' : doc.title);

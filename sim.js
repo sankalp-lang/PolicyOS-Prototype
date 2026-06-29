@@ -1,8 +1,8 @@
 /* ============================================================
-   PolicyOS · Tara — Impact Simulator
-   • App.sim      — evaluate a credit policy's thresholds against the
+   PolicyOS · Tara - Impact Simulator
+   • App.sim      - evaluate a credit policy's thresholds against the
                     anonymized test cohort; report approval/NPA/flip deltas.
-   • App.simView  — the modal UI (knobs → run → result → propose to Approvals).
+   • App.simView  - the modal UI (knobs → run → result → propose to Approvals).
    Used by: policy detail, RuleSense, Regulatory radar, Approvals, and Tara.
    ============================================================ */
 (function () {
@@ -75,7 +75,7 @@
       App.openModal({
         title: 'Impact simulator · ' + p.name, lg: true,
         sub: (label || 'Model a threshold change against the test cohort') + ' · ' + DB.testBase.length + ' applicants',
-        body: `<div class="info-banner">${App.icon('chart')} <span>Adjust a threshold and see who flips and how the book moves — computed on an anonymized <strong>test cohort</strong> (no PII). This is the evidence you attach to a change request.</span></div>
+        body: `<div class="info-banner">${App.icon('chart')} <span>Adjust a threshold and see who flips and how the book moves - computed on an anonymized <strong>test cohort</strong> (no PII). This is the evidence you attach to a change request.</span></div>
           <div class="login__label">Proposed thresholds</div>
           <div class="grid grid-3">${knobs}</div>
           <div class="row gap-8 mt-16"><button class="btn btn--primary" onclick="App.simView.run('${id}')">${App.icon('zap')} Run simulation</button><button class="btn" onclick="App.simView.reset('${id}')">Reset</button></div>
@@ -130,10 +130,10 @@
       const changedKey = Object.keys(ov).find(k => ov[k] !== base[k]);
       const change = changedKey
         ? { field: SIM.knobMeta[changedKey].label, from: SIM.fmt(changedKey, base[changedKey]), to: SIM.fmt(changedKey, ov[changedKey]) }
-        : { field: 'Threshold', from: '—', to: '—' };
+        : { field: 'Threshold', from: '-', to: '-' };
       const dA = ((r.proposed.rate - r.base.rate) * 100).toFixed(1), dN = ((r.proposed.npa - r.base.npa) * 100).toFixed(1);
       const me = (App.state.user && App.state.user.id) || 'THQ0144';
-      const req = { id: 'REQ-' + (2000 + DB.approvals.length), name: p.name + ' — ' + change.field + ' ' + change.from + ' → ' + change.to,
+      const req = { id: 'REQ-' + (2000 + DB.approvals.length), name: p.name + ' - ' + change.field + ' ' + change.from + ' → ' + change.to,
         type: 'Policy Change', policy: id, requestedBy: me, on: '21 Jun 2026', priority: 'High', status: 'Pending L1',
         change, rationale: 'Simulated on the test cohort: approval ' + (dA >= 0 ? '+' : '') + dA + ' pts, projected NPA ' + (dN >= 0 ? '+' : '') + dN + ' pts, ' + (r.flipped.length || r.gained.length) + ' applicants reclassified.',
         complianceFlag: null, impact: { approvalDelta: dA, npaDelta: dN, flipped: (r.flipped.length || r.gained.length) } };

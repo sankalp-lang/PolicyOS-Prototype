@@ -1,4 +1,4 @@
-/* Users & access — merged People directory + User management + Access control (Admin only).
+/* Users & access - merged People directory + User management + Access control (Admin only).
    Add users: individually · via CSV · or sync HRMS to find new joiners → approve & assign. */
 App.registerView('usersaccess', {
   title: 'Users & access',
@@ -14,7 +14,7 @@ App.registerView('usersaccess', {
       ? `<div style="position:relative"><button class="btn btn--primary" onclick="App.usersAccessView.addMenu(event)">${App.icon('plus')} Add users ${App.icon('chevron')}</button><div id="uaAddMenu" style="display:none"></div></div>`
       : '';
     return `<div class="page">
-      <div class="page__head"><div><h1>Users &amp; access</h1><p>One place for your directory, user roles and permission rules — everything that decides who can see what.</p></div><div class="spacer"></div>${addBtn}</div>
+      <div class="page__head"><div><h1>Users &amp; access</h1><p>One place for your directory, user roles and permission rules - everything that decides who can see what.</p></div><div class="spacer"></div>${addBtn}</div>
       <div class="tabs">${tabBtn('people','People &amp; users')}${tabBtn('access','Access rules')}</div>
       <div id="uaBody">${tab==='people' ? App.usersAccessView.peopleHtml() : App.usersAccessView.accessHtml()}</div>
     </div>`;
@@ -38,14 +38,13 @@ App.usersAccessView = {
       const roleCell = pu
         ? App.ui.pill(DB.roleLabels[pu.role] + (pu.hrAdmin ? ' · HR' : ''), roleKind[pu.role] || 'gray')
         : `<span class="tag">Not provisioned</span>`;
-      const access = pu ? (pu.role === 'admin' ? 'All policies' : App.visiblePolicies(Object.assign({}, e, pu)).length + ' policies') : '—';
+      const access = pu ? (pu.role === 'admin' ? 'All policies' : App.visiblePolicies(Object.assign({}, e, pu)).length + ' policies') : '-';
       return `<tr class="clickable" data-n="${(e.name + ' ' + e.email).toLowerCase()}" data-team="${e.team}" data-prov="${pu ? 'y' : 'n'}" onclick="App.directoryView.profile('${e.id}')">
         <td><div class="cell-person">${App.ui.avatar(e,'sm')}<div><div class="cell-strong">${App.esc(e.name)}</div><div class="muted" style="font-size:12px">${App.esc(e.email)}</div></div></div></td>
         <td><span class="mono" style="font-size:12px;color:var(--muted)">${e.id}</span></td>
         <td><span class="tag">${App.esc(e.team)}</span></td>
         <td>${roleCell}</td>
         <td class="muted" style="font-size:12.5px">${access}</td>
-        <td>${App.ui.presencePill(e.presence)}</td>
       </tr>`;
     }).join('');
     const prov = DB.employees.filter(e => App.usersAccessView.provisioned(e.id)).length;
@@ -56,7 +55,7 @@ App.usersAccessView = {
         <select class="select" id="uaTeam"><option value="">All teams</option>${DB.teams.map(t => `<option>${t.name}</option>`).join('')}</select>
         <select class="select" id="uaProv"><option value="">Everyone</option><option value="y">Provisioned</option><option value="n">Not provisioned</option></select>
       </div>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Emp ID</th><th>Team</th><th>Role</th><th>Access</th><th>Today</th></tr></thead><tbody id="uaRows">${rows}</tbody></table></div>`;
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Emp ID</th><th>Team</th><th>Role</th><th>Access</th></tr></thead><tbody id="uaRows">${rows}</tbody></table></div>`;
   },
   mountPeople(root) {
     const s = root.querySelector('#uaSearch'); if (!s) return;
@@ -76,7 +75,7 @@ App.usersAccessView = {
     m.style.display = 'block';
     m.style.cssText = 'display:block;position:absolute;right:0;top:42px;width:264px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;z-index:50';
     const it = (ic, t, d, fn) => `<div class="cmdk__item" style="align-items:flex-start" onclick="${fn}"><span style="margin-top:2px">${App.icon(ic)}</span><div style="flex:1"><div style="font-weight:600;font-size:13px">${t}</div><div style="font-size:11.5px;color:var(--muted)">${d}</div></div></div>`;
-    m.innerHTML = it('user', 'Add individually', 'One person — set role &amp; access', 'App.usersAccessView.addIndividual()')
+    m.innerHTML = it('user', 'Add individually', 'One person - set role &amp; access', 'App.usersAccessView.addIndividual()')
       + it('download', 'Import CSV', 'Bulk-add from a spreadsheet (team, role, category)', 'App.usersAccessView.addCsv()');
     setTimeout(() => document.addEventListener('click', function h() { const mm = document.getElementById('uaAddMenu'); if (mm) mm.style.display = 'none'; document.removeEventListener('click', h); }), 0);
   },
@@ -111,7 +110,7 @@ App.usersAccessView = {
     const rows = news.map(e => `<div class="minirow" id="ua-new-${e.id}">${App.ui.avatar(e,'sm')}<div style="flex:1"><b style="font-weight:600">${App.esc(e.name)}</b><div class="muted" style="font-size:11.5px">${App.esc(e.title)} · ${App.esc(e.team)} · ${e.id}</div></div><button class="btn btn--sm btn--primary" onclick="App.usersAccessView.approve('${e.id}')">${App.icon('check')} Approve</button></div>`).join('');
     App.openModal({
       title: 'Sync from Keka HRMS', sub: 'New joiners found in HRMS, not yet provisioned in PolicyOS.', lg: true,
-      body: `<div class="info-banner">${App.icon('plug')} <span>Synced <strong>Keka HRMS</strong> just now — <strong>${news.length}</strong> ${news.length === 1 ? 'person is' : 'people are'} in HRMS but not yet in PolicyOS. Approve each to assign a role &amp; access.</span></div>
+      body: `<div class="info-banner">${App.icon('plug')} <span>Synced <strong>Keka HRMS</strong> just now - <strong>${news.length}</strong> ${news.length === 1 ? 'person is' : 'people are'} in HRMS but not yet in PolicyOS. Approve each to assign a role &amp; access.</span></div>
         <div id="uaNewList">${rows || App.ui.empty('check', 'All synced', 'Everyone in HRMS is already provisioned.')}</div>`,
       footer: `<button class="btn" onclick="App.closeModal()">Done</button>`
     });
@@ -143,12 +142,12 @@ App.usersAccessView = {
         : [].concat((p.access.roles || []).map(r => `<span class="tag">${DB.roleLabels[r] || r}</span>`)).concat((p.access.teams || []).map(t => `<span class="tag">${App.esc(t)}</span>`)).join(' ');
       return `<tr><td><div class="cell-strong">${App.esc(p.name)}${p.sensitive ? ' ' + App.ui.pill('Confidential', 'red') : ''}</div><div class="muted" style="font-size:12px">${App.esc(p.category)} · ${p.version}</div></td><td><div class="row wrap gap-6">${scope}</div></td><td><button class="btn btn--sm" onclick="App.accessView.edit('${p.id}')">${App.icon('edit')} Edit</button></td></tr>`;
     }).join('');
-    return `<div class="info-banner">${App.icon('shield')} <span><strong>How access is derived:</strong> role- and team-based rules over the policy library, scoped by category. Tara enforces them at retrieval — it never returns a policy the user couldn't open.</span></div>
+    return `<div class="info-banner">${App.icon('shield')} <span><strong>How access is derived:</strong> role- and team-based rules over the policy library, scoped by category. Tara enforces them at retrieval - it never returns a policy the user couldn't open.</span></div>
       <h3 style="margin:6px 0 12px;font-size:15px">Policy access rules</h3>
       <div class="table-wrap" style="margin-bottom:24px"><table class="tbl"><thead><tr><th>Policy</th><th>Who can access</th><th></th></tr></thead><tbody>${polRows}</tbody></table></div>
       <div class="card"><div class="card__head">${App.icon('eye')}<h3>Access tester</h3><div class="spacer"></div><span class="muted" style="font-size:12px">Preview what a persona can retrieve</span></div>
         <div class="card__body"><div class="grid grid-2" style="margin-bottom:14px">
-          <div class="field" style="margin:0"><label>Persona</label><select class="select" id="uaTU" style="width:100%">${DB.users.map(u => { const e = App.emp(u.id); return `<option value="${u.id}">${App.esc(e.name)} — ${DB.roleLabels[u.role]}</option>`; }).join('')}</select></div>
+          <div class="field" style="margin:0"><label>Persona</label><select class="select" id="uaTU" style="width:100%">${DB.users.map(u => { const e = App.emp(u.id); return `<option value="${u.id}">${App.esc(e.name)} - ${DB.roleLabels[u.role]}</option>`; }).join('')}</select></div>
           <div class="field" style="margin:0"><label>Policy</label><select class="select" id="uaTP" style="width:100%">${pols.map(p => `<option value="${p.id}">${App.esc(p.name)}</option>`).join('')}</select></div>
         </div><div id="uaTR"></div></div></div>`;
   },
@@ -160,7 +159,7 @@ App.usersAccessView = {
       const p = App.policy(pid); const ok = App.canViewPolicy(p, user);
       root.querySelector('#uaTR').innerHTML = ok
         ? `<div class="lock-banner" style="background:var(--green-50);border-color:#bcd3c2;color:var(--green-700)">${App.icon('check')} <span><strong>${App.esc(App.emp(uid).name)}</strong> can view &amp; query “${App.esc(p.name)}”. Tara will use it as a source.</span></div>`
-        : `<div class="lock-banner">${App.icon('lock')} <span><strong>${App.esc(App.emp(uid).name)}</strong> cannot access “${App.esc(p.name)}” — Tara refuses and marks the source hidden.</span></div>`;
+        : `<div class="lock-banner">${App.icon('lock')} <span><strong>${App.esc(App.emp(uid).name)}</strong> cannot access “${App.esc(p.name)}” - Tara refuses and marks the source hidden.</span></div>`;
     };
     tu.onchange = run; tp.onchange = run; run();
   }

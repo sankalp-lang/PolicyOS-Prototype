@@ -1,4 +1,4 @@
-/* User Management — manage PolicyOS users, roles, AI-feature & category access */
+/* User Management - manage PolicyOS users, roles, AI-feature & category access */
 App.registerView('usermgmt', {
   title: 'User Management',
   render(ctx) {
@@ -15,7 +15,7 @@ App.registerView('usermgmt', {
       if (p.features && p.features.assessments)  feats.push('Assessments');
       const featTags = feats.length
         ? feats.map(f => `<span class="tag">${App.esc(f)}</span>`).join(' ')
-        : '<span class="muted" style="font-size:12px">—</span>';
+        : '<span class="muted" style="font-size:12px">-</span>';
       return `<tr class="clickable" data-name="${App.esc(e.name.toLowerCase())} ${App.esc(e.email.toLowerCase())} ${App.esc(e.id.toLowerCase())}" data-role="${p.role}" onclick="App.usermgmtView.profile('${p.id}')">
         <td><span class="mono" style="font-size:12px;color:var(--muted)">${App.esc(e.id)}</span></td>
         <td><div class="cell-person">${App.ui.avatar(e,'sm')}<div><div class="cell-strong">${App.esc(e.name)}</div><div class="muted" style="font-size:12px">${App.esc(e.title)}</div></div></div></td>
@@ -38,7 +38,7 @@ App.registerView('usermgmt', {
         </div>` : ''}
       </div>
 
-      <div class="info-banner">${App.icon('shield')} <span><strong>${DB.users.length} active users</strong> · roles and feature flags below are enforced at retrieval — a user only ever queries the categories and sources their role permits.</span></div>
+      <div class="info-banner">${App.icon('shield')} <span><strong>${DB.users.length} active users</strong> · roles and feature flags below are enforced at retrieval - a user only ever queries the categories and sources their role permits.</span></div>
 
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="umSearch" placeholder="Search by name, email or ID…"/></div>
@@ -142,7 +142,7 @@ App.usermgmtView = {
         <div class="info-banner" style="margin-top:4px">${App.icon('info')} <span><strong>Before you upload</strong></span></div>
         <div style="padding:2px 2px 0">
           <div class="minirow">${App.icon('check')}<span style="flex:1">Mandatory columns: <strong>Employee ID</strong>, <strong>Name</strong>, <strong>Email</strong>, <strong>Role</strong>, <strong>Product Category</strong>.</span></div>
-          <div class="minirow">${App.icon('alert')}<span style="flex:1"><strong>Administrators cannot be bulk-added</strong> — admin access must be granted individually.</span></div>
+          <div class="minirow">${App.icon('alert')}<span style="flex:1"><strong>Administrators cannot be bulk-added</strong> - admin access must be granted individually.</span></div>
           <div class="minirow">${App.icon('key')}<span style="flex:1">Each <strong>Employee ID</strong> and <strong>Email</strong> must be unique; duplicates are skipped.</span></div>
           <div class="minirow">${App.icon('layers')}<span style="flex:1">Product Category must match an existing category: ${DB.categories.map(c=>`<span class="tag">${App.esc(c.name)}</span>`).join(' ')}.</span></div>
         </div>
@@ -169,8 +169,8 @@ App.usermgmtView = {
           </div>
         </div>
         <div class="grid grid-2 mt-8">
-          <div class="field" style="margin-bottom:0"><label>Set role to</label><select class="select" style="width:100%"><option value="">— No change —</option>${Object.keys(DB.roleLabels).map(r=>`<option value="${r}">${App.esc(DB.roleLabels[r])}</option>`).join('')}</select></div>
-          <div class="field" style="margin-bottom:0"><label>Grant category</label><select class="select" style="width:100%"><option value="">— No change —</option>${DB.categories.map(c=>`<option>${App.esc(c.name)}</option>`).join('')}</select></div>
+          <div class="field" style="margin-bottom:0"><label>Set role to</label><select class="select" style="width:100%"><option value="">- No change -</option>${Object.keys(DB.roleLabels).map(r=>`<option value="${r}">${App.esc(DB.roleLabels[r])}</option>`).join('')}</select></div>
+          <div class="field" style="margin-bottom:0"><label>Grant category</label><select class="select" style="width:100%"><option value="">- No change -</option>${DB.categories.map(c=>`<option>${App.esc(c.name)}</option>`).join('')}</select></div>
         </div>
       `,
       footer: `<button class="btn" onclick="App.closeModal()">Cancel</button>

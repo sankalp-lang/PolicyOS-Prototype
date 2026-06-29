@@ -1,4 +1,4 @@
-/* InsightGen — text-to-SQL analytics + proactive AI insights */
+/* InsightGen - text-to-SQL analytics + proactive AI insights */
 App.registerView('insightgen', {
   title: 'InsightGen',
   render(ctx) {
@@ -9,7 +9,7 @@ App.registerView('insightgen', {
           ${App.insightgenView.DBS.map(d=>`<option value="${App.esc(d)}" ${d===s.db?'selected':''}>${App.esc(d)}</option>`).join('')}
         </select>
       </div>
-      <div class="info-banner">${App.icon('database')} <span>Querying <strong id="igDbLabel">${App.esc(s.db)}</strong> · read-only analytics replica. Generated SQL is shown for every answer — nothing runs against production.</span></div>
+      <div class="info-banner">${App.icon('database')} <span>Querying <strong id="igDbLabel">${App.esc(s.db)}</strong> · read-only analytics replica. Generated SQL is shown for every answer - nothing runs against production.</span></div>
       <div class="tabs">
         <div class="tab ${s.tab==='chat'?'is-active':''}" onclick="App.insightgenView.setTab('chat')">${App.icon('chat')} Chat</div>
         <div class="tab ${s.tab==='insights'?'is-active':''}" onclick="App.insightgenView.setTab('insights')">${App.icon('zap')} AI Insights <span class="nav__badge" style="margin-left:6px">${DB.insights.length}</span></div>
@@ -74,7 +74,7 @@ App.insightgenView = {
           </div>
         </div>
       </div>
-      <div id="igThread" style="margin-top:16px">${s.thread.length ? '' : App.ui.empty('chart', 'No queries yet', 'Ask a question above — Tara generates the SQL, runs it on the analytics replica, and returns a result, chart and explanation.')}</div>`;
+      <div id="igThread" style="margin-top:16px">${s.thread.length ? '' : App.ui.empty('chart', 'No queries yet', 'Ask a question above - Tara generates the SQL, runs it on the analytics replica, and returns a result, chart and explanation.')}</div>`;
   },
 
   run(text) {
@@ -182,7 +182,7 @@ App.insightgenView = {
     const chart = `<div style="padding:4px 0">${rows.map(r => `<div class="bar-row"><div class="bar-row__lbl">${App.esc(r.reason)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(8, 100 * r.count / max).toFixed(0)}%">${r.count}</div></div><div class="bar-row__val">${pct(r.count)}</div></div>`).join('')}</div>`;
 
     const answer = `<p>Across <strong>${total}</strong> rejected personal-loan applications, the single biggest driver is <strong>${App.esc(top.reason)}</strong> at <strong>${App.esc(pct(top.count))}</strong> (${top.count} applications).</p>
-      <p>The top three reasons — ${App.esc(rows[0].reason)}, ${App.esc(rows[1].reason)} and ${App.esc(rows[2].reason)} — together account for <strong>${pct(rows[0].count + rows[1].count + rows[2].count)}</strong> of all rejections, so tuning the bureau-score and FOIR cut-offs would move the needle most.</p>`;
+      <p>The top three reasons - ${App.esc(rows[0].reason)}, ${App.esc(rows[1].reason)} and ${App.esc(rows[2].reason)} - together account for <strong>${pct(rows[0].count + rows[1].count + rows[2].count)}</strong> of all rejections, so tuning the bureau-score and FOIR cut-offs would move the needle most.</p>`;
 
     return { sql, result, chart, answer, followup: 'What is the personal loan eligibility criteria?' };
   },
@@ -229,7 +229,7 @@ App.insightgenView = {
       <div class="row gap-8 mt-12"><span class="muted" style="font-size:12px;align-self:center">${data.length} rows · login → disbursal</span><div class="spacer" style="flex:1"></div><button class="btn btn--sm" onclick="App.toast('Exported result to CSV (demo)','ok')">${App.icon('download')} Download</button></div>`;
     const chart = `<div style="padding:4px 0">${data.map(d => `<div class="bar-row"><div class="bar-row__lbl">${App.esc(d.reason)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(8, 100 * d.count / max).toFixed(0)}%">${fmt(d.count)}</div></div><div class="bar-row__val">${fmt(d.count)}</div></div>`).join('')}</div>`;
     const answer = `<p><strong>Thane</strong> converts logins to disbursals at just <strong>10.6%</strong>, well below the <strong>18%</strong> network average.</p>
-      <p>Andheri (22.1%) and Pune Camp (19.8%) lead the network — worth comparing their underwriting turnaround against Thane's.</p>`;
+      <p>Andheri (22.1%) and Pune Camp (19.8%) lead the network - worth comparing their underwriting turnaround against Thane's.</p>`;
     return { sql, result, chart, answer, followup: 'What is the collections and recovery policy?' };
   },
 
@@ -247,7 +247,7 @@ App.insightgenView = {
     const result = `<div class="table-wrap"><table class="tbl"><thead><tr><th>Dimension</th><th>Count</th></tr></thead><tbody>${tblRows}</tbody></table></div>
       <div class="row gap-8 mt-12"><span class="muted" style="font-size:12px;align-self:center">${rows.length} rows</span><div class="spacer" style="flex:1"></div><button class="btn btn--sm" onclick="App.toast('Exported result to CSV (demo)','ok')">${App.icon('download')} Download</button></div>`;
     const chart = `<div style="padding:4px 0">${rows.map(r => `<div class="bar-row"><div class="bar-row__lbl">${App.esc(r.reason)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(8, 100 * r.count / max).toFixed(0)}%">${r.count}</div></div><div class="bar-row__val">${(100 * r.count / total).toFixed(0)}%</div></div>`).join('')}</div>`;
-    const answer = `<p>I interpreted <em>“${App.esc(q)}”</em> against the <strong>${App.esc(this._state().db)}</strong>. Here is a first-pass breakdown — refine the question (e.g. add a time window or product) for a sharper cut.</p>
+    const answer = `<p>I interpreted <em>“${App.esc(q)}”</em> against the <strong>${App.esc(this._state().db)}</strong>. Here is a first-pass breakdown - refine the question (e.g. add a time window or product) for a sharper cut.</p>
       <p class="muted" style="margin-top:6px;font-size:12.5px">Tip: try one of the example chips above for a fully modelled result.</p>`;
     return { sql, result, chart, answer, followup: q };
   },
@@ -276,7 +276,7 @@ App.insightgenView = {
         </div>
       </div>`;
     }).join('');
-    return `<div class="info-banner" style="background:var(--teal-50);border-color:#a5f3fc;color:var(--teal-600)">${App.icon('sparkles')} <span>Tara scans your data on a schedule and raises anomalies proactively — ranked by priority. ${DB.insights.length} active insight${DB.insights.length === 1 ? '' : 's'}.</span></div>
+    return `<div class="info-banner" style="background:var(--teal-50);border-color:#a5f3fc;color:var(--teal-600)">${App.icon('sparkles')} <span>Tara scans your data on a schedule and raises anomalies proactively - ranked by priority. ${DB.insights.length} active insight${DB.insights.length === 1 ? '' : 's'}.</span></div>
       <div class="grid grid-3">${cards}</div>`;
   },
 

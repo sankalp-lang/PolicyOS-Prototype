@@ -1,4 +1,4 @@
-/* Dashboard / Home — centered Ask-Tara hero + actions + KPIs + activity (policy-centric; connectors parked).
+/* Dashboard / Home - centered Ask-Tara hero + actions + KPIs + activity (policy-centric; connectors parked).
    Numbers render in JetBrains Mono via .kpi__val; the rest stays Playfair/Inter. */
 App.registerView('dashboard', {
   title: 'Home',
@@ -18,7 +18,7 @@ App.registerView('dashboard', {
     const hero = `
       <div style="text-align:center;max-width:760px;margin:8px auto 36px">
         <h1 style="font-size:32px;font-weight:600;letter-spacing:-.01em">Hello, ${App.esc(fn)}.</h1>
-        <p class="muted" style="margin:11px auto 0;font-size:14.5px;max-width:560px">Ask your policy library in plain English. Tara only ever answers from what you're allowed to see — and shows the page it came from.</p>
+        <p class="muted" style="margin:11px auto 0;font-size:14.5px;max-width:560px">Ask your policy library in plain English. Tara only ever answers from what you're allowed to see - and shows the page it came from.</p>
         <div class="chat-inputwrap" style="margin:22px auto 0;max-width:700px;align-items:center;border-radius:12px;padding:9px 9px 9px 15px;text-align:left">
           <span style="color:var(--brand-600);display:grid;place-items:center">${App.icon('sparkles')}</span>
           <textarea id="homeAsk" rows="1" placeholder="Ask anything…  e.g. what's the personal loan eligibility?" style="padding-top:6px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.chat.toggle(true);App.chat.ask(this.value);this.value='';}"></textarea>
@@ -49,7 +49,7 @@ App.registerView('dashboard', {
         </div></div>`;
     }
 
-    // manager / admin / risk — quick actions to the core features
+    // manager / admin / risk - quick actions to the core features
     const actionCards = [
       { ic: 'alert', c: '#a8553a', t: 'Regulatory', s: regGaps + ' gap' + (regGaps === 1 ? '' : 's') + ' to review', r: 'regulatory' },
       { ic: 'chat', c: '#3a7479', t: 'PolyGPT', s: 'Ask your policies', r: 'polygpt' },

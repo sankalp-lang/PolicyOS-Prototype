@@ -1,4 +1,4 @@
-/* Assessments — policy-awareness testing (RBAC-aware: managers create & manage; staff see "My Assessments") */
+/* Assessments - policy-awareness testing (RBAC-aware: managers create & manage; staff see "My Assessments") */
 App.registerView('assessments', {
   title(ctx) { return (ctx.user.role === 'user') ? 'My Assessments' : 'Assessments'; },
   render(ctx) {
@@ -108,7 +108,7 @@ progressBar(done, total) {
   return `<div style="flex:1;max-width:90px;height:8px;background:var(--surface-2);border:1px solid var(--line);border-radius:999px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--brand-600)"></div></div>`;
 },
 
-/* generate plausible MCQs for a category — deterministic, demo content */
+/* generate plausible MCQs for a category - deterministic, demo content */
 questionsFor(a) {
   const bank = {
     Compliance: [
@@ -292,7 +292,7 @@ App.assessmentsView = {
     App.openModal({ title: (justSubmitted ? 'Submitted · ' : 'Your result · ') + a.name, sub: 'Graded instantly · recorded for your admin', lg: true,
       body: head + `<div class="login__label">Answer review</div>` + review,
       footer: `<button class="btn btn--primary" onclick="App.closeModal();App.navigate('assessments')">Done</button>` });
-    if (justSubmitted) App.toast('Submitted — you scored ' + sub.score + '%', sub.passed ? 'ok' : 'warn');
+    if (justSubmitted) App.toast('Submitted - you scored ' + sub.score + '%', sub.passed ? 'ok' : 'warn');
   },
 
   /* ---------------- create wizard ---------------- */
@@ -325,7 +325,7 @@ App.assessmentsView = {
     if (st.step === 1) {
       const d = st.details;
       body = this._steps() + `
-        <div class="field"><label>Assessment title <span class="req">*</span></label><input class="input" id="wzTitle" placeholder="e.g. KYC & AML Awareness — Q3" value="${App.esc(d.title)}"/></div>
+        <div class="field"><label>Assessment title <span class="req">*</span></label><input class="input" id="wzTitle" placeholder="e.g. KYC & AML Awareness - Q3" value="${App.esc(d.title)}"/></div>
         <div class="grid grid-2">
           <div class="field"><label>Product category <span class="req">*</span></label><select class="select" id="wzCat" style="width:100%">${DB.categories.map(c => `<option ${c.name === d.category ? 'selected' : ''}>${App.esc(c.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Passing percentage <span class="req">*</span></label><input class="input" id="wzPass" type="number" min="0" max="100" value="${d.passing}"/></div>
@@ -353,7 +353,7 @@ App.assessmentsView = {
         footer = `<button class="btn" onclick="App.assessmentsView._back()">${App.icon('arrow')} Back</button>
           <button class="btn btn--primary" onclick="App.assessmentsView._next2()">Save & continue ${App.icon('arrow')}</button>`;
       } else {
-        // ai/csv produced a set — show summary
+        // ai/csv produced a set - show summary
         body = this._steps() + `
           <div class="info-banner">${App.icon('check')} <span><strong>${st.questions.length} question${st.questions.length === 1 ? '' : 's'}</strong> ready via ${st.method === 'ai' ? 'AI generation' : 'CSV upload'}. You can switch method below.</span></div>
           ${st.questions.map((q, i) => `<div class="card card--pad" style="margin-bottom:10px"><div class="row gap-8" style="align-items:flex-start"><span class="tag">Q${i + 1}</span><b style="flex:1;font-size:13.5px">${App.esc(q.q)}</b></div></div>`).join('')}

@@ -1,4 +1,4 @@
-/* Access Control — permission-faithful retrieval config (the moat surface) */
+/* Access Control - permission-faithful retrieval config (the moat surface) */
 App.registerView('access', {
   title: 'Access Control',
   render(ctx) {
@@ -15,7 +15,7 @@ App.registerView('access', {
     }).join('');
 
     return `<div class="page">
-      <div class="page__head"><div><h1>Access Control</h1><p>Define who can view and query each policy and source. Tara enforces these rules at retrieval time — it never returns a source a user can't already open.</p></div></div>
+      <div class="page__head"><div><h1>Access Control</h1><p>Define who can view and query each policy and source. Tara enforces these rules at retrieval time - it never returns a source a user can't already open.</p></div></div>
       <div class="info-banner">${App.icon('shield')} <span><strong>How access is derived:</strong> each connected source's native permissions are <strong>inherited</strong> automatically (Notion sharing, Jira roles, HRMS field visibility). The rules below are <strong>SPOC overrides &amp; source-level scoping</strong> on top of that.</span></div>
 
       <h3 style="margin:6px 0 12px;font-size:15px">Connected sources</h3>
@@ -27,7 +27,7 @@ App.registerView('access', {
       <div class="card"><div class="card__head">${App.icon('eye')}<h3>Access tester</h3><div class="spacer"></div><span class="muted" style="font-size:12px">Preview exactly what a persona can retrieve</span></div>
         <div class="card__body">
           <div class="grid grid-2" style="margin-bottom:14px">
-            <div class="field" style="margin:0"><label>Persona</label><select class="select" id="atUser" style="width:100%">${DB.users.map(u=>{const e=App.emp(u.id);return `<option value="${u.id}">${App.esc(e.name)} — ${DB.roleLabels[u.role]}</option>`;}).join('')}</select></div>
+            <div class="field" style="margin:0"><label>Persona</label><select class="select" id="atUser" style="width:100%">${DB.users.map(u=>{const e=App.emp(u.id);return `<option value="${u.id}">${App.esc(e.name)} - ${DB.roleLabels[u.role]}</option>`;}).join('')}</select></div>
             <div class="field" style="margin:0"><label>Policy</label><select class="select" id="atPol" style="width:100%">${DB.policies.map(p=>`<option value="${p.id}">${App.esc(p.name)}</option>`).join('')}</select></div>
           </div>
           <div id="atResult"></div>

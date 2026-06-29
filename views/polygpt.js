@@ -1,4 +1,4 @@
-/* PolyGPT — dedicated, permission-faithful policy Q&A chat.
+/* PolyGPT - dedicated, permission-faithful policy Q&A chat.
    Mirrors the Ask Tara (copilot) surface, but scoped to one or more
    policies you explicitly attach. Only policies your role can view are
    selectable; answers come from App.askTara so RBAC is enforced at retrieval. */
@@ -22,7 +22,7 @@ App.registerView('polygpt', {
     const empty = `<div style="max-width:560px;margin:7vh auto 0;text-align:center">
         <div style="width:54px;height:54px;border-radius:14px;margin:0 auto 18px;background:var(--ink);display:grid;place-items:center;color:var(--brand-400)">${App.icon('chat')}</div>
         <h1 style="font-size:24px">Chat with your policies</h1>
-        <p class="muted" style="margin-top:8px;font-size:14px">PolyGPT answers questions grounded in the policy documents you attach. Pick a policy, or ask in plain English — Tara only ever reads from policies your role can open.</p>
+        <p class="muted" style="margin-top:8px;font-size:14px">PolyGPT answers questions grounded in the policy documents you attach. Pick a policy, or ask in plain English - Tara only ever reads from policies your role can open.</p>
         <div class="grid" style="margin-top:22px;text-align:left;gap:10px">
           ${prompts.map(s=>`<button class="chat-suggest__btn" onclick="App.polygptView.ask('${s.q.replace(/'/g,"\\'")}')">${App.icon(s.ic)}<span style="flex:1">${App.esc(s.q)}</span><span class="tag">Try</span></button>`).join('')}
         </div>
@@ -125,7 +125,7 @@ App.polygptView = {
         return `<div class="togglerow" id="pgrow_${p.id}">
           <label style="display:flex;align-items:center;gap:11px;flex:1;cursor:pointer">
             <input type="checkbox" ${on?'checked':''} onchange="App.polygptView._toggleDraft('${p.id}',this.checked)" style="width:16px;height:16px;accent-color:var(--brand-600);cursor:pointer"/>
-            <div class="togglerow__txt"><b>${App.esc(p.name)}${p.sensitive?' '+App.ui.pill('Confidential','red'):''}</b><span>${App.esc(p.sub)} · owner ${App.esc((App.emp(p.owner)||{}).name||'—')}</span></div>
+            <div class="togglerow__txt"><b>${App.esc(p.name)}${p.sensitive?' '+App.ui.pill('Confidential','red'):''}</b><span>${App.esc(p.sub)} · owner ${App.esc((App.emp(p.owner)||{}).name||'-')}</span></div>
           </label>
           <div class="spacer"></div>
           <select class="select" onchange="App.toast('Version pinned: '+this.value+' (demo)')" title="Version">
@@ -139,7 +139,7 @@ App.polygptView = {
 
     App.openModal({
       title:'Select policies', sub:'Attach one or more policy documents. Only policies your role can open are shown.', lg:true,
-      body:`<div class="info-banner">${App.icon('shield')} <span>Showing <strong>${vis.length}</strong> of ${DB.policies.length} policies — the rest are outside your access scope and can't be attached.</span></div>${groups}`,
+      body:`<div class="info-banner">${App.icon('shield')} <span>Showing <strong>${vis.length}</strong> of ${DB.policies.length} policies - the rest are outside your access scope and can't be attached.</span></div>${groups}`,
       footer:`<button class="btn" onclick="App.closeModal()">Cancel</button>
         <button class="btn btn--primary" id="pgConfirm" onclick="App.polygptView._confirmSelection()">${App.icon('check')} Confirm Selection (${App.state.polygptDraft.length})</button>`
     });
@@ -196,7 +196,7 @@ App.polygptView = {
         : '';
       const attachedLine = `<div class="row gap-8" style="margin-top:11px;padding-top:10px;border-top:1px dashed var(--line)">
           <span class="muted" style="font-size:11.5px;font-weight:600">${App.icon('shield','')} Policies attached:</span>
-          <span style="font-size:11.5px;color:var(--ink-2)">${m.attached && m.attached.length ? m.attached.map(id=>App.esc((App.policy(id)||{}).name||id)).join(', ') : 'None — answered across all policies you can access'}</span>
+          <span style="font-size:11.5px;color:var(--ink-2)">${m.attached && m.attached.length ? m.attached.map(id=>App.esc((App.policy(id)||{}).name||id)).join(', ') : 'None - answered across all policies you can access'}</span>
           <span class="spacer" style="flex:1"></span>
           <button class="btn btn--ghost btn--sm" title="Helpful" onclick="App.polygptView.rate(${idx},'up')">${App.icon('up')}</button>
           <button class="btn btn--ghost btn--sm" title="Not helpful" onclick="App.polygptView.rate(${idx},'down')">${App.icon('down')}</button>
@@ -208,7 +208,7 @@ App.polygptView = {
   rate(idx, dir) {
     const m = App.state.polygpt[idx];
     if (m) m.rating = dir;
-    App.toast(dir === 'up' ? 'Thanks — marked helpful' : 'Thanks — feedback noted');
+    App.toast(dir === 'up' ? 'Thanks - marked helpful' : 'Thanks - feedback noted');
   },
 
   /* ---------------- ask ---------------- */
@@ -221,7 +221,7 @@ App.polygptView = {
     const attached = (App.state.polygptSel || []).slice();
 
     // If exactly one policy is attached and the question is bare, nudge Tara
-    // toward that policy by naming it — keeps retrieval permission-faithful.
+    // toward that policy by naming it - keeps retrieval permission-faithful.
     let query = text;
     if (attached.length === 1) {
       const p = App.policy(attached[0]);

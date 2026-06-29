@@ -1,17 +1,26 @@
 /* ============================================================
-   PolicyOS · Tara — Design System v2
+   PolicyOS · Tara - Design System v2
    Editorial · warm-neutral · flat · Playfair display + Inter UI.
    One restrained accent. Hairlines over shadows. No gradients.
-   (All class names preserved from v1 — this is a re-skin.)
+   (All class names preserved from v1 - this is a re-skin.)
    ============================================================ */
 
-:root {
-  /* type */
-  --font-sans: 'Inter', system-ui, -apple-system, Segoe UI, sans-serif;
-  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+/* Letters render in Playfair Display; numbers + symbols/punctuation render in a clean sans
+   (Inter if installed, else the system grotesque). The unicode-range maps digits/symbols to
+   'TaraNum'; everything else (letters) falls through to Playfair Display. */
+@font-face {
+  font-family: 'TaraNum';
+  src: local('Inter'), local('Inter Variable'), local('Helvetica Neue'), local('Helvetica'), local('Arial'), local('Segoe UI'), local('Roboto'), local('DejaVu Sans');
+  unicode-range: U+0020-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+2010-2027, U+2030-206F, U+20A0-20BF, U+2190-21FF, U+2200-22FF;
+}
 
-  /* accent (used sparingly: links, active state, focus, Tara) — kept under --brand-* names for back-compat */
+:root {
+  /* type: Playfair Display for alphabets, Inter/sans for numbers & symbols (via the TaraNum unicode-range) */
+  --font-sans: 'TaraNum', 'Playfair Display', Georgia, serif;
+  --font-display: 'TaraNum', 'Playfair Display', Georgia, serif;
+  --font-mono: 'Inter', system-ui, -apple-system, Segoe UI, sans-serif;
+
+  /* accent (used sparingly: links, active state, focus, Tara) - kept under --brand-* names for back-compat */
   --brand-50:  #eef1fb;
   --brand-100: #e0e6f7;
   --brand-200: #c6d0ef;
@@ -21,7 +30,7 @@
   --brand-700: #233593;
   --brand: var(--brand-600);
 
-  /* secondary accent (Tara / company-brain) — muted slate-teal */
+  /* secondary accent (Tara / company-brain) - muted slate-teal */
   --teal-50:  #ecf3f3;
   --teal-500: #4a8d92;
   --teal-600: #3a7479;
@@ -30,7 +39,7 @@
   --bg:        #f6f4ef;   /* warm paper */
   --surface:   #ffffff;
   --surface-2: #f3f1ea;   /* warm subtle fill */
-  --ink:       #1c1a16;   /* warm near-black — primary text & primary buttons */
+  --ink:       #1c1a16;   /* warm near-black - primary text & primary buttons */
   --ink-2:     #4a463e;   /* secondary text */
   --muted:     #847e72;   /* warm muted */
   --faint:     #aaa395;
@@ -45,7 +54,7 @@
   --violet-50:#efeaf3; --violet-600:#5e4d83;
   --slate-50: #f3f1ea;
 
-  /* shape — flatter, less bubbly */
+  /* shape - flatter, less bubbly */
   --r-sm: 6px; --r: 9px; --r-lg: 12px; --r-xl: 16px;
   --shadow-xs: none;
   --shadow-sm: 0 1px 2px rgba(28,26,22,.05);
@@ -222,7 +231,7 @@ p { margin: 0; }
 
 .tag { font-size:11px; font-weight:500; color:var(--muted); background:var(--surface-2); border:1px solid var(--line); padding:3px 9px; border-radius:6px; }
 
-/* cards — flat, hairline */
+/* cards - flat, hairline */
 .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); }
 .card--pad { padding:18px 20px; }
 .card__head { display:flex; align-items:center; gap:10px; padding:15px 18px; border-bottom:1px solid var(--line-2); }
@@ -619,7 +628,7 @@ pre.code .k{color:#b3a7e0;} pre.code .s{color:#9cc7a6;} pre.code .c{color:#8a847
    Document viewer (App.pdf) + regulatory upload/assessment/redline
    ============================================================ */
 
-/* inline citation chip — used wherever an answer/redline quotes a page */
+/* inline citation chip - used wherever an answer/redline quotes a page */
 .cite { display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:999px; border:1px solid var(--brand-100,#d7defa);
   background:var(--brand-50); color:var(--brand-600); font-size:12px; font-weight:500; cursor:pointer; line-height:1.2; }
 .cite:hover { background:#e3e8fb; border-color:var(--brand-500); }
@@ -728,7 +737,7 @@ pre.code .k{color:#b3a7e0;} pre.code .s{color:#9cc7a6;} pre.code .c{color:#8a847
 @media (max-width:760px) { .reg-review { grid-template-columns:1fr; } .reg-stats { grid-template-columns:repeat(2,1fr); } }
 
 /* ============================================================
-   Regulatory — releases feed + two-pane redline editor
+   Regulatory - releases feed + two-pane redline editor
    ============================================================ */
 .reg-rel { border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; background:var(--surface); }
 .reg-rel__h { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -776,7 +785,7 @@ pre.code .k{color:#b3a7e0;} pre.code .s{color:#9cc7a6;} pre.code .c{color:#8a847
 .chg__cmt { margin-top:9px; }
 .chg__cmt textarea { width:100%; min-height:54px; font-size:12.5px; }
 
-/* regulatory two-PDF editor — stepper + editable policy pdf */
+/* regulatory two-PDF editor - stepper + editable policy pdf */
 .reg-step { border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:12px 14px; margin-bottom:14px; }
 .reg-step__nav { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
 .reg-step__pos { font-family:var(--font-mono); font-size:12px; color:var(--muted); }
@@ -808,3 +817,6 @@ pre.code .k{color:#b3a7e0;} pre.code .s{color:#9cc7a6;} pre.code .c{color:#8a847
 .pdffull__t { font-weight:600; font-size:14px; }
 .pdffull__b { flex:1; overflow:auto; padding:22px; background:var(--surface-2); }
 .pdffull__b .pdfpg { max-width:720px; margin:0 auto; }
+
+/* code & SQL use the number/symbol font, never the serif */
+code, pre, .code { font-family: var(--font-mono); }

@@ -1,4 +1,4 @@
-/* Approvals — maker-checker workflows (permission-faithful, RBAC-aware) */
+/* Approvals - maker-checker workflows (permission-faithful, RBAC-aware) */
 App.registerView('approvals', {
   title: 'Approvals',
   render(ctx) {
@@ -108,13 +108,13 @@ App.approvalsView = {
         <button class="btn btn--primary" onclick="App.approvalsView.setMode('workflows')">${App.icon('branch')} Manage Approval Workflows</button>
       </div>
       <div class="info-banner">${App.icon('shield')} <span><strong>Maker-checker enforced:</strong> the requester can never self-approve. Levels &amp; approvers come from the workflow for each policy category; regulatory checks are flagged automatically.</span></div>
-      ${hidden ? `<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} request${hidden>1?'s are':' is'} hidden</strong> — they touch policies outside your access scope.</span></div>` : ''}
+      ${hidden ? `<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} request${hidden>1?'s are':' is'} hidden</strong> - they touch policies outside your access scope.</span></div>` : ''}
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="apSearch" placeholder="Search requests…"/></div>
         <select class="select" id="apPrio"><option value="">All priority</option><option>High</option><option>Medium</option><option>Low</option></select>
         <select class="select" id="apBy"><option value="">All requesters</option>${byIds.map(id=>{const e=App.emp(id);return `<option value="${id}">${App.esc(e.name)}</option>`;}).join('')}</select>
       </div>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th>Request</th><th>Type</th><th>Requested On</th><th>Priority</th><th>Requested By</th><th></th></tr></thead><tbody id="apBody">${rows || ''}${empty}${rows ? '' : `<tr><td colspan="6">${App.ui.empty('check','No pending requests','All caught up — nothing awaiting your review.')}</td></tr>`}</tbody></table></div>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Request</th><th>Type</th><th>Requested On</th><th>Priority</th><th>Requested By</th><th></th></tr></thead><tbody id="apBody">${rows || ''}${empty}${rows ? '' : `<tr><td colspan="6">${App.ui.empty('check','No pending requests','All caught up - nothing awaiting your review.')}</td></tr>`}</tbody></table></div>
     </div>`;
   },
 
@@ -157,7 +157,7 @@ App.approvalsView = {
     return `<div class="page">
       <div class="page__head"><div>
         <div class="row gap-8" style="margin-bottom:6px"><button class="btn btn--ghost btn--sm" onclick="App.approvalsView.setMode('requests')">${App.icon('arrow')} Back to requests</button></div>
-        <h1>Audit Trail</h1><p>Immutable, time-stamped log of every maker-checker action — captured for compliance.</p>
+        <h1>Audit Trail</h1><p>Immutable, time-stamped log of every maker-checker action - captured for compliance.</p>
       </div></div>
       <div class="info-banner">${App.icon('lock')} <span>This log is append-only and synced to the <strong>audit-log service</strong>. Entries cannot be edited or deleted.</span></div>
       <div class="table-wrap"><table class="tbl"><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -175,7 +175,7 @@ App.approvalsView = {
       if (wf) {
         const l1 = App.emp(wf.levels[0].users[0]);
         if (a.status.includes('L2')) {
-          e.push({ ts: a.on + ' 11:02', actor: l1, action: 'Approved at Level 1 — escalated to L2', target: a.name, status: App.ui.pill('L1 approved','green') });
+          e.push({ ts: a.on + ' 11:02', actor: l1, action: 'Approved at Level 1 - escalated to L2', target: a.name, status: App.ui.pill('L1 approved','green') });
         } else {
           e.push({ ts: a.on + ' 10:48', actor: l1, action: 'Picked up for Level 1 review', target: a.name, status: App.ui.pill('In review','amber') });
         }
@@ -212,7 +212,7 @@ App.approvalsView = {
       : '';
 
     const cites = (a.citations && a.citations.length && App.pdf)
-      ? `<div class="field" style="margin-top:14px;margin-bottom:0"><label>Source documents — open at the cited page</label><div class="row gap-8 wrap">${a.citations.map(ct => App.pdf.cite(ct.kind, ct.id, ct.anchor, ct.kind === 'circular' ? ('Circular ' + (a.sourceRef || '')) : null)).join('')}</div></div>`
+      ? `<div class="field" style="margin-top:14px;margin-bottom:0"><label>Source documents - open at the cited page</label><div class="row gap-8 wrap">${a.citations.map(ct => App.pdf.cite(ct.kind, ct.id, ct.anchor, ct.kind === 'circular' ? ('Circular ' + (a.sourceRef || '')) : null)).join('')}</div></div>`
       : '';
 
     let levels = '';
@@ -233,7 +233,7 @@ App.approvalsView = {
       <div class="spacer" style="flex:1"></div>`
       + (canAct
           ? `<button class="btn btn--danger" onclick="App.approvalsView.reject('${a.id}')">${App.icon('x')} Reject</button><button class="btn btn--primary" onclick="App.closeModal();App.toast('Approved · ${App.esc(a.id)} advanced to next level (demo)')">${App.icon('check')} Approve</button>`
-          : `<span class="pill pill--gray" style="align-self:center">${App.icon('lock')} ${u.id===a.requestedBy?'You raised this — cannot self-approve':'View only'}</span>`);
+          : `<span class="pill pill--gray" style="align-self:center">${App.icon('lock')} ${u.id===a.requestedBy?'You raised this - cannot self-approve':'View only'}</span>`);
 
     App.openModal({
       title: a.name,
@@ -280,7 +280,7 @@ App.approvalsView = {
       body: `<div class="grid grid-2"><div class="field"><label>Workflow Name</label><input class="input" value="${App.esc(w.name)}"/></div>
         <div class="field"><label>Status</label><select class="select" style="width:100%"><option ${w.status==='Active'?'selected':''}>Active</option><option ${w.status==='Draft'?'selected':''}>Draft</option></select></div></div>
         <div class="login__label">Approval levels</div>${levels}
-        <button class="btn btn--sm" onclick="App.toast('Add level — open the full editor (demo)')">${App.icon('plus')} Add Level</button>`,
+        <button class="btn btn--sm" onclick="App.toast('Add level - open the full editor (demo)')">${App.icon('plus')} Add Level</button>`,
       footer: `<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.closeModal();App.toast('Workflow “${App.esc(w.name.replace(/"/g,''))}” saved (demo)')">Save workflow</button>`
     });
   },
@@ -303,7 +303,7 @@ App.approvalsView = {
   },
 
   levelRowHtml(n) {
-    const opts = DB.employees.map(e => `<option value="${e.id}">${App.esc(e.name)} — ${App.esc(e.title)}</option>`).join('');
+    const opts = DB.employees.map(e => `<option value="${e.id}">${App.esc(e.name)} - ${App.esc(e.title)}</option>`).join('');
     return `<div class="card card--pad" style="margin-bottom:10px">
       <div class="row gap-8" style="margin-bottom:10px"><span class="step is-active"><span class="step__num">${n}</span> Level ${n}</span></div>
       <div class="field"><label>Select User <span class="req">*</span></label><select class="select" style="width:100%">${opts}</select></div>

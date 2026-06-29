@@ -1,8 +1,8 @@
 /* ============================================================
-   PolicyOS · Tara — Integrations layer (BYO key, on-prem)
-   • App.llm  — pick ANY model from 6 providers + optional fallback,
+   PolicyOS · Tara - Integrations layer (BYO key, on-prem)
+   • App.llm  - pick ANY model from 6 providers + optional fallback,
                 paste that provider's key, Tara calls it from the browser.
-   • App.conn — connect data sources (Keka, GreytHR, Jira, Notion, …)
+   • App.conn - connect data sources (Keka, GreytHR, Jira, Notion, …)
                 via API key or MCP server URL.
    No provider is preselected/default. Keys live only in this browser
    (localStorage) and are sent only to the provider/connector you choose.
@@ -86,7 +86,7 @@
   }
 
   /* ============================================================
-     App.llm — model selection + live calls
+     App.llm - model selection + live calls
      ============================================================ */
   const _llmMem = {}; const llmStore = store('tara_llm_cfg', _llmMem);
   const LLM = {
@@ -104,7 +104,7 @@
       const vis = App.visiblePolicies(user);
       const pol = vis.map(p => '### ' + p.name + ' (' + p.version + ', ' + p.category + ')\n' + p.summary + '\nKey parameters: ' + Object.entries(p.facts).map(([k, v]) => k + ': ' + v).join('; ') + '\nRules: ' + p.rules.join(' | ')).join('\n\n');
       const hidden = DB.policies.length - vis.length;
-      const polBlock = '## POLICIES THIS USER MAY ACCESS (PolicyOS) — ' + vis.length + ' of ' + DB.policies.length + '\n' + (pol || '(none in scope)') + '\n\n[' + hidden + ' other policies exist but are OUTSIDE this user\'s scope and are not included.]';
+      const polBlock = '## POLICIES THIS USER MAY ACCESS (PolicyOS) - ' + vis.length + ' of ' + DB.policies.length + '\n' + (pol || '(none in scope)') + '\n\n[' + hidden + ' other policies exist but are OUTSIDE this user\'s scope and are not included.]';
       let ctx = 'COMPANY: ' + DB.company.name + '\n\n';
       if (hrmsOn) {
         const people = DB.employees.map(e => '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence)).join('\n');
@@ -116,12 +116,12 @@
         ctx += '## WORK IN PROGRESS (Jira)\n' + jira + '\n\n';
       }
       ctx += polBlock;
-      if (!hrmsOn && !jiraOn) ctx += '\n\n[Only the policy library is connected in this deployment — answer from policies only.]';
+      if (!hrmsOn && !jiraOn) ctx += '\n\n[Only the policy library is connected in this deployment - answer from policies only.]';
       return ctx;
     },
     systemPrompt(user) {
       const srcList = (App.sourceLabels ? App.sourceLabels() : []).concat(['Policies']).join(', ');
-      return 'You are Tara, the on-prem company copilot for ' + DB.company.name + ', answering for ' + user.name + ' (' + DB.roleLabels[user.role] + ', ' + user.team + ').\nRULES: Answer ONLY from the CONTEXT below — it is already filtered to what THIS user may see. If something is absent (a policy, person, or salary), say the user is not permitted to see it; never guess or use outside knowledge. Be concise; bold key values like **720**. End with a final line "SOURCES: <subset of ' + srcList + '>" (omit if none).\n\nCONTEXT:\n' + LLM.buildContext(user);
+      return 'You are Tara, the on-prem company copilot for ' + DB.company.name + ', answering for ' + user.name + ' (' + DB.roleLabels[user.role] + ', ' + user.team + ').\nRULES: Answer ONLY from the CONTEXT below - it is already filtered to what THIS user may see. If something is absent (a policy, person, or salary), say the user is not permitted to see it; never guess or use outside knowledge. Be concise; bold key values like **720**. End with a final line "SOURCES: <subset of ' + srcList + '>" (omit if none).\n\nCONTEXT:\n' + LLM.buildContext(user);
     },
 
     async _call(slot, query, user) {
@@ -132,20 +132,20 @@
           method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.key },
           body: JSON.stringify({ system_instruction: { parts: [{ text: sys }] }, contents: [{ role: 'user', parts: [{ text: query }] }], generationConfig: { maxOutputTokens: 1500 } })
         });
-        if (!r.ok) throw new Error(p.label + ' ' + r.status + ' — ' + (await r.text()).slice(0, 140));
+        if (!r.ok) throw new Error(p.label + ' ' + r.status + ' - ' + (await r.text()).slice(0, 140));
         const d = await r.json(); text = ((d.candidates || [])[0]?.content?.parts || []).map(x => x.text || '').join('');
       } else if (p.shape === 'anthropic') {
         const r = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({ model: cfg.model, max_tokens: 1500, system: sys, messages: [{ role: 'user', content: query }] })
         });
-        if (!r.ok) throw new Error(p.label + ' ' + r.status + ' — ' + (await r.text()).slice(0, 140));
+        if (!r.ok) throw new Error(p.label + ' ' + r.status + ' - ' + (await r.text()).slice(0, 140));
         const d = await r.json(); text = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
       } else { // openai-compatible
         const headers = { 'content-type': 'application/json' };
         if (p.auth === 'sarvam') headers['api-subscription-key'] = cfg.key; else headers['Authorization'] = 'Bearer ' + cfg.key;
         const r = await fetch(p.base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model: cfg.model, max_tokens: 1500, messages: [{ role: 'system', content: sys }, { role: 'user', content: query }] }) });
-        if (!r.ok) throw new Error(p.label + ' ' + r.status + ' — ' + (await r.text()).slice(0, 140));
+        if (!r.ok) throw new Error(p.label + ' ' + r.status + ' - ' + (await r.text()).slice(0, 140));
         const d = await r.json(); text = d.choices[0].message.content;
       }
       return text;
@@ -184,7 +184,7 @@
     openSetup() {
       const c = LLM.get();
       LLM._draft = { primary: Object.assign({ provider: '', model: '', key: '' }, c.primary), fallback: Object.assign({ provider: '', model: '', key: '' }, c.fallback), showFallback: !!(c.fallback && c.fallback.provider) };
-      App.openModal({ title: 'Connect a model', sub: 'Bring your own key. Pick any model — Tara only ever sends each user the data they\'re allowed to see. The key is optional here: pick a model to preview it in demo mode, add a key to answer live.', lg: true,
+      App.openModal({ title: 'Connect a model', sub: 'Bring your own key. Pick any model - Tara only ever sends each user the data they\'re allowed to see. The key is optional here: pick a model to preview it in demo mode, add a key to answer live.', lg: true,
         body: '<div id="llmSetupBody"></div>',
         footer: (LLM.selected() ? '<button class="btn btn--danger" onclick="App.llm.clear();App.closeModal();App.toast(\'Reset to demo mode\')">Reset to demo</button>' : '') + '<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.llm._save()">Save model</button>' });
       LLM._renderSetup();
@@ -206,13 +206,13 @@
       let html =
         '<div class="info-banner">' + App.icon('lock') + ' <span>Permission-faithful: the model is handed only the context the current persona can see. Log in as a staff user and it literally can\'t answer about a policy they\'re not on.</span></div>' +
         '<div class="setup-label">Primary model</div>' + LLM._grid('primary') +
-        '<div class="field" style="margin-top:14px"><label>API key for ' + (d.primary.provider ? PROVIDERS[d.primary.provider].label : 'the selected model') + '</label><input class="input" id="llmKeyPrimary" type="password" placeholder="' + App.esc(pHint) + '" value="' + App.esc(d.primary.key) + '" oninput="App.llm._draft.primary.key=this.value"/><div class="hint">Optional — leave blank to preview this model in demo mode. If set, it\'s stored only in this browser and sent only to ' + (d.primary.provider ? PROVIDERS[d.primary.provider].company : 'the provider') + '.</div></div>' +
+        '<div class="field" style="margin-top:14px"><label>API key for ' + (d.primary.provider ? PROVIDERS[d.primary.provider].label : 'the selected model') + '</label><input class="input" id="llmKeyPrimary" type="password" placeholder="' + App.esc(pHint) + '" value="' + App.esc(d.primary.key) + '" oninput="App.llm._draft.primary.key=this.value"/><div class="hint">Optional - leave blank to preview this model in demo mode. If set, it\'s stored only in this browser and sent only to ' + (d.primary.provider ? PROVIDERS[d.primary.provider].company : 'the provider') + '.</div></div>' +
         '<div class="divider"></div>';
       if (!d.showFallback) {
         html += '<button class="btn btn--sm" onclick="App.llm._draft.showFallback=true;App.llm._renderSetup()">' + App.icon('plus') + ' Add a fallback model (optional)</button>';
       } else {
         const fHint = d.fallback.provider ? PROVIDERS[d.fallback.provider].keyHint : 'Select a fallback model, then paste its key';
-        html += '<div class="setup-label">Fallback model <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— used only if the primary fails. Optional.</span></div>' + LLM._grid('fallback', d.primary.model) +
+        html += '<div class="setup-label">Fallback model <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">- used only if the primary fails. Optional.</span></div>' + LLM._grid('fallback', d.primary.model) +
           '<div class="field" style="margin-top:14px"><label>API key for the fallback</label><input class="input" id="llmKeyFallback" type="password" placeholder="' + App.esc(fHint) + '" value="' + App.esc(d.fallback.key) + '" oninput="App.llm._draft.fallback.key=this.value"/></div>' +
           '<button class="btn btn--sm btn--ghost" onclick="App.llm._draft.showFallback=false;App.llm._draft.fallback={provider:\'\',model:\'\',key:\'\'};App.llm._renderSetup()">Remove fallback</button>';
       }
@@ -222,18 +222,18 @@
     _save() {
       const d = LLM._draft;
       if (!d.primary.provider || !d.primary.model) { App.toast('Pick a primary model', 'warn'); return; }
-      // key is OPTIONAL — selecting a model persists and shows in the header; a key upgrades it to live answers.
+      // key is OPTIONAL - selecting a model persists and shows in the header; a key upgrades it to live answers.
       const cfg = { primary: { provider: d.primary.provider, model: d.primary.model, key: d.primary.key.trim() } };
       if (d.showFallback && d.fallback.provider && d.fallback.model) cfg.fallback = { provider: d.fallback.provider, model: d.fallback.model, key: d.fallback.key.trim() };
       llmStore.set(cfg); LLM.refreshBadges(); App.closeModal();
       const label = LLM.modelMeta('primary').modelLabel;
-      App.toast(d.primary.key.trim() ? ('Connected live · ' + label) : ('Model set · ' + label + ' — add a key to answer live'));
+      App.toast(d.primary.key.trim() ? ('Connected live · ' + label) : ('Model set · ' + label + ' - add a key to answer live'));
     }
   };
   App.llm = LLM;
 
   /* ============================================================
-     App.conn — data-source connectors (API key or MCP server)
+     App.conn - data-source connectors (API key or MCP server)
      ============================================================ */
   const _connMem = {}; const connStore = store('tara_conn_cfg', _connMem);
   const CONN = {
@@ -256,7 +256,7 @@
       App.openModal({ title: 'Connect ' + c.name, sub: c.note,
         body:
           '<div class="row gap-12" style="margin-bottom:14px">' + CONN.logo(id, 40) + '<div><div style="font-weight:600">' + App.esc(c.name) + '</div><div class="muted" style="font-size:12.5px">' + App.esc(c.kind) + ' · ' + App.esc(c.count) + '</div></div></div>' +
-          '<div class="info-banner">' + App.icon('shield') + ' <span>Tara inherits this source\'s own permissions — it never returns anything the signed-in user couldn\'t open in ' + App.esc(c.name) + ' directly.</span></div>' +
+          '<div class="info-banner">' + App.icon('shield') + ' <span>Tara inherits this source\'s own permissions - it never returns anything the signed-in user couldn\'t open in ' + App.esc(c.name) + ' directly.</span></div>' +
           '<div class="field"><label>Connection method</label><select class="select" id="connMethod" style="width:100%" onchange="App.conn._draft.method=this.value;App.conn._renderField()">' + methods.map(m => '<option value="' + m.id + '"' + (m.id === CONN._draft.method ? ' selected' : '') + '>' + m.label + '</option>').join('') + '</select></div>' +
           '<div id="connField"></div>',
         footer: (CONN.isConnected(id) ? '<button class="btn btn--danger" onclick="App.conn.disconnect(\'' + id + '\')">Disconnect</button>' : '') + '<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.conn._save(\'' + id + '\')">Connect</button>' });
@@ -265,7 +265,7 @@
     _renderField() {
       const host = document.getElementById('connField'); if (!host) return; const d = CONN._draft;
       if (d.method === 'mcp') host.innerHTML = '<div class="field"><label>MCP server URL</label><input class="input" id="connUrl" placeholder="https://mcp.your-source.com/sse" value="' + App.esc(d.url) + '" oninput="App.conn._draft.url=this.value"/><div class="hint">Tara connects to your MCP server; OAuth/credentials are brokered there.</div></div>';
-      else if (d.method === 'oauth') host.innerHTML = '<div class="field"><label>OAuth</label><div class="pdf-ph" style="min-height:auto;padding:18px;text-align:center;cursor:pointer" onclick="App.toast(\'OAuth consent flow opens on the deployed app\')">' + App.icon('key') + '<div class="muted" style="margin-top:6px;font-size:12.5px">Authorize via the provider — paste the resulting token below, or use the hosted consent flow after deploy.</div></div><input class="input" style="margin-top:10px" id="connKey" type="password" placeholder="Access token" value="' + App.esc(d.key) + '" oninput="App.conn._draft.key=this.value"/></div>';
+      else if (d.method === 'oauth') host.innerHTML = '<div class="field"><label>OAuth</label><div class="pdf-ph" style="min-height:auto;padding:18px;text-align:center;cursor:pointer" onclick="App.toast(\'OAuth consent flow opens on the deployed app\')">' + App.icon('key') + '<div class="muted" style="margin-top:6px;font-size:12.5px">Authorize via the provider - paste the resulting token below, or use the hosted consent flow after deploy.</div></div><input class="input" style="margin-top:10px" id="connKey" type="password" placeholder="Access token" value="' + App.esc(d.key) + '" oninput="App.conn._draft.key=this.value"/></div>';
       else host.innerHTML = '<div class="field"><label>API key / token</label><input class="input" id="connKey" type="password" placeholder="Paste the API key from ' + '" value="' + App.esc(d.key) + '" oninput="App.conn._draft.key=this.value"/><div class="hint">Stored only in this browser; sent only to this source.</div></div>';
     },
     _save(id) {

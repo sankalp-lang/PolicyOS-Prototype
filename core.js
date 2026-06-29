@@ -1,5 +1,5 @@
 /* ============================================================
-   PolicyOS · Tara — Runtime core
+   PolicyOS · Tara - Runtime core
    Router · RBAC · Tara chat engine · shell · modal · cmd-palette
    ============================================================ */
 window.App = (function () {
@@ -105,9 +105,9 @@ window.App = (function () {
   App.catEnabled = (name) => { const c = DB.categories.find(x => x.name === name); return !c || c.enabled !== false; };
   App.enabledCats = () => DB.categories.filter(c => c.enabled !== false);
   App.visiblePolicies = user => DB.policies.filter(p => App.catEnabled(p.category) && App.canViewPolicy(p, user));
-  App.canSeeComp = () => false;  // compensation removed entirely — not visible to anyone
+  App.canSeeComp = () => false;  // compensation removed entirely - not visible to anyone
 
-  /* ---------------- CONNECTORS PARKED (picked up ~2 months out) — single version, no editions ----------------
+  /* ---------------- CONNECTORS PARKED (picked up ~2 months out) - single version, no editions ----------------
      Tara is policy-centric for now. These stubs keep every call site safe and policy-focused;
      restore the real source wiring (and editions, if ever) when connectors return. */
   App.connectedSources = () => [];
@@ -117,7 +117,7 @@ window.App = (function () {
   App.sourceNouns = () => ['your policies', 'eligibility', 'regulations'];
   App.sourceNounList = () => 'your policy library';
   App.sourceChips = () => `<span class="src-chip policy">${App.icon('shield')} Policies</span>`;
-  // example prompts — policy / BFSI focused (+ role flavour)
+  // example prompts - policy / BFSI focused (+ role flavour)
   App.suggestPrompts = (user) => {
     user = user || App.state.user; const out = [];
     out.push({ q:"What's the leave policy?", ic:'shield', tag:'Policy' });
@@ -172,7 +172,7 @@ window.App = (function () {
       }
     }
 
-    // (compensation / salary answers removed — not surfaced to anyone)
+    // (compensation / salary answers removed - not surfaced to anyone)
 
     // ---- 2) Jira / who is working on what ----
     if (jiraOn && has('working on','work on','building','what is','whats','doing','jira','ticket','issue','sprint','progress','tasks','task ','status of','assigned')) {
@@ -181,7 +181,7 @@ window.App = (function () {
         const body = issues.map(i => { const a=App.emp(i.assignee);
           return `<div class="minirow"><span class="mono" style="font-size:11px;color:var(--muted);width:64px">${i.key}</span><div style="flex:1"><b style="font-weight:600">${App.esc(i.title)}</b><div class="muted" style="font-size:11.5px;margin-top:2px">${App.ui.avatar(a,'sm')} ${App.esc(a.name)} · ${i.sprint}</div></div>${App.ui.statusPill(i.status)}</div>`;
         }).join('');
-        return { html:`<p>Here's what's in flight on <strong>${App.esc(proj.name)}</strong> — ${issues.length} active issue${issues.length>1?'s':''}:</p>${ansCard('From Jira · '+proj.key,'branch',body)}`,
+        return { html:`<p>Here's what's in flight on <strong>${App.esc(proj.name)}</strong> - ${issues.length} active issue${issues.length>1?'s':''}:</p>${ansCard('From Jira · '+proj.key,'branch',body)}`,
                  sources:[{kind:'jira',label:'Jira · '+proj.name}] };
       }
       if (emp) {
@@ -233,7 +233,7 @@ window.App = (function () {
                sources:[{kind:'hrms',label:'Keka HRMS · directory'}] };
     }
 
-    // (connectors parked — people / Jira / HRMS queries fall through to Policy Q&A / fallback)
+    // (connectors parked - people / Jira / HRMS queries fall through to Policy Q&A / fallback)
 
     // ---- Policy Q&A (permission-faithful) ----
     const topicMap = [
@@ -253,7 +253,7 @@ window.App = (function () {
       if (p && !App.catEnabled(p.category)) p = null;  // disabled category → treat as unavailable
       if (p) {
         if (!App.canViewPolicy(p, user)) {
-          return { html:`<p>🔒 <strong>You don't have access to the “${App.esc(p.name)}”.</strong></p><p class="muted" style="margin-top:6px">This policy is scoped to ${App.esc((p.access.teams||[]).concat(p.access.roles||[]).join(', ')||'restricted roles')}. Tara never answers from a source you can't already open — permission is enforced at retrieval, not in the prompt.</p>`,
+          return { html:`<p>🔒 <strong>You don't have access to the “${App.esc(p.name)}”.</strong></p><p class="muted" style="margin-top:6px">This policy is scoped to ${App.esc((p.access.teams||[]).concat(p.access.roles||[]).join(', ')||'restricted roles')}. Tara never answers from a source you can't already open - permission is enforced at retrieval, not in the prompt.</p>`,
                    sources:[{kind:'locked',label:p.name+' · no access'}] };
         }
         const facts = Object.entries(p.facts).map(([k,v]) => `<div class="minirow"><span class="muted">${App.esc(k)}</span><span class="spacer" style="flex:1"></span><b>${App.esc(v)}</b></div>`).join('');
@@ -262,19 +262,19 @@ window.App = (function () {
         return { html:`<p>${App.esc(p.summary)}</p>${ansCard(p.name+' · '+p.version,'shield',facts)}${cite}`,
                  sources:[{kind:'policy',label:p.name+' ('+p.version+')'}] };
       }
-      // generic policy — list what THIS user can see
+      // generic policy - list what THIS user can see
       const vis = App.visiblePolicies(user);
       const hidden = DB.policies.length - vis.length;
       const body = vis.map(p=>`<div class="minirow">${App.icon('file')}<div style="flex:1"><b style="font-weight:600">${App.esc(p.name)}</b></div><span class="tag">${App.esc(p.category)}</span></div>`).join('');
-      return { html:`<p>You can query <strong>${vis.length}</strong> ${vis.length===1?'policy':'policies'} with your access:</p>${ansCard('Policies you can access','shield',body)}${hidden?`<p class="muted" style="margin-top:8px;font-size:12px">🔒 ${hidden} more polic${hidden>1?'ies are':'y is'} hidden — outside your role's scope.</p>`:''}`,
+      return { html:`<p>You can query <strong>${vis.length}</strong> ${vis.length===1?'policy':'policies'} with your access:</p>${ansCard('Policies you can access','shield',body)}${hidden?`<p class="muted" style="margin-top:8px;font-size:12px">🔒 ${hidden} more polic${hidden>1?'ies are':'y is'} hidden - outside your role's scope.</p>`:''}`,
                sources:[{kind:'policy',label:'PolicyOS repository'}] };
     }
 
     // ---- fallback (policy-centric) ----
-    return { html:`<p>I'm <strong>Tara</strong> — your policy copilot. I answer only from the policies <em>you're</em> permitted to see. Try:</p>
+    return { html:`<p>I'm <strong>Tara</strong> - your policy copilot. I answer only from the policies <em>you're</em> permitted to see. Try:</p>
       <ul>
-        <li><strong>Policies</strong> — “what's the leave policy?”, “personal loan eligibility?”, “KYC &amp; AML summary”</li>
-        <li><strong>What-if</strong> — “what if we raise the CIBIL cutoff to 720?”</li>
+        <li><strong>Policies</strong> - “what's the leave policy?”, “personal loan eligibility?”, “KYC &amp; AML summary”</li>
+        <li><strong>What-if</strong> - “what if we raise the CIBIL cutoff to 720?”</li>
       </ul>`, sources:[] };
   };
 
@@ -287,9 +287,9 @@ window.App = (function () {
       if (!App.state.chat.length) {
         const labs = App.sourceLabels();
         const intro = labs.length
-          ? `I'm <strong>Tara</strong>. I pull from ${labs.map(l => '<strong>' + App.esc(l) + '</strong>').join(', ')} and your <strong>policies</strong> — only what your role can access.`
+          ? `I'm <strong>Tara</strong>. I pull from ${labs.map(l => '<strong>' + App.esc(l) + '</strong>').join(', ')} and your <strong>policies</strong> - only what your role can access.`
           : `I'm <strong>Tara</strong>, scoped to your <strong>policy library</strong> and what your role can access.`;
-        body.innerHTML = `<div class="msg msg--ai"><div class="msg__av">${App.icon('sparkles')}</div><div class="msg__bubble">Hi ${App.esc(App.state.user.name.split(' ')[0])} — ${intro} What do you need?</div></div>
+        body.innerHTML = `<div class="msg msg--ai"><div class="msg__av">${App.icon('sparkles')}</div><div class="msg__bubble">Hi ${App.esc(App.state.user.name.split(' ')[0])} - ${intro} What do you need?</div></div>
           <div class="chat-suggest">${suggestionsFor(App.state.user).map(s=>`<button class="chat-suggest__btn" onclick="App.chat.ask('${s.q.replace(/'/g,"\\'")}')">${App.icon(s.ic)} ${App.esc(s.q)}</button>`).join('')}</div>`;
         return;
       }
@@ -328,11 +328,10 @@ window.App = (function () {
         ] };
     }
     const pinned = [ { id:'dashboard', label:'Dashboard', icon:'home' }, { id:'copilot', label:'Ask Tara', icon:'sparkles', tag:'AI' } ];
-    // Company Brain: the policy knowledge surface — Policies live here, alongside Assessments
+    // Company Brain: the policy knowledge surface - Policies live here, alongside Assessments
     const brain = [ { id:'policies', label:'Policies', icon:'file' } ];
     if (user.role==='policy_manager'||user.role==='admin'||user.role==='assessment_manager') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
     const groups = [
-      { title:'Company Brain', items: brain },
       { title:'Policy Management', items: [
         { id:'polygpt', label:'PolyGPT', icon:'chat' },
         { id:'rulesense', label:'RuleSense AI', icon:'code' },
@@ -340,9 +339,10 @@ window.App = (function () {
         { id:'regulatory', label:'Regulatory', icon:'alert' },
         { id:'bredecoder', label:'BRE Decoder', icon:'key' },
         { id:'insightgen', label:'InsightGen', icon:'chart' }
-      ] }
+      ] },
+      { title:'Company Brain', items: brain }
     ];
-    // Administration: ADMIN ONLY. (Connectors parked — picked up ~2 months out.)
+    // Administration: ADMIN ONLY. (Connectors parked - picked up ~2 months out.)
     if (user.role==='admin') {
       const admin = [ { id:'usersaccess', label:'Users & access', icon:'users' },
         { id:'category', label:'Categories', icon:'layers' } ];
@@ -404,7 +404,7 @@ window.App = (function () {
         <div class="chat-head">
           <div class="chat-head__logo">${App.icon('sparkles')}</div>
           <div style="flex:1"><b>Tara</b><span>Company copilot · permission-aware</span></div>
-          <button class="btn btn--sm tara-status" title="Model status — connect a model" onclick="App.llm.openSetup()"></button>
+          <button class="btn btn--sm tara-status" title="Model status - connect a model" onclick="App.llm.openSetup()"></button>
           <button class="modal__x" onclick="App.chat.toggle(false)">${App.icon('x')}</button>
         </div>
         <div class="chat-body" id="chatBody"></div>
@@ -534,7 +534,7 @@ window.App = (function () {
   App.signIn = () => {
     const rk = { admin:'violet', policy_manager:'blue', risk_approver:'amber', user:'green' };
     App.openModal({
-      title: 'Sign in', sub: 'Use one of the demo accounts below — any password works.',
+      title: 'Sign in', sub: 'Use one of the demo accounts below - any password works.',
       body: `
         <div class="field"><label>Work email</label><input class="input" id="siEmail" autocomplete="off" placeholder="you@tartanhq.com" onkeydown="if(event.key==='Enter'){var p=document.getElementById('siPass');if(p)p.focus();}"/></div>
         <div class="field" style="margin-bottom:8px"><label>Password</label><input class="input" id="siPass" type="password" placeholder="anything" onkeydown="if(event.key==='Enter')App.doSignIn();"/></div>
@@ -571,7 +571,7 @@ window.App = (function () {
       a:`<div class="answer-card"><div class="answer-card__h">${App.icon('alert')} RBI/2026-27/58 · suggested changes</div><div class="answer-card__b"><div class="minirow"><span class="muted">Personal Loan · Min CIBIL</span><span class="spacer" style="flex:1"></span><b><span class="diff-del">700</span> → <span class="diff-add">720</span></b></div><div class="minirow"><span class="muted">Personal Loan · Max FOIR</span><span class="spacer" style="flex:1"></span><b><span class="diff-del">55%</span> → <span class="diff-add">50%</span></b></div></div></div>`,
       chips:[{k:'policy',l:'Regulatory · RBI/2026-27/58'}] },
     { persona:'Chirag · Staff', q:'Show me the personal loan policy',
-      a:`<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">It's scoped to Risk &amp; Policy and the Founder's Office. Permission is enforced at retrieval — not in the prompt.</p>`,
+      a:`<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">It's scoped to Risk &amp; Policy and the Founder's Office. Permission is enforced at retrieval - not in the prompt.</p>`,
       chips:[{k:'locked',l:'Personal Loan Policy · no access'}] },
     { persona:'Chirag · Staff', q:"What's the leave policy?",
       a:`<div class="answer-card"><div class="answer-card__h">${App.icon('shield')} Employee Leave Policy · v2.2</div><div class="answer-card__b"><div class="minirow"><span class="muted">Privilege leave</span><span class="spacer" style="flex:1"></span><b>18 / yr</b></div><div class="minirow"><span class="muted">Sick leave</span><span class="spacer" style="flex:1"></span><b>10 / yr</b></div><div class="minirow"><span class="muted">Carry-forward</span><span class="spacer" style="flex:1"></span><b>up to 30 days</b></div></div></div>`,
@@ -611,7 +611,7 @@ window.App = (function () {
   App.scene = {
     boundary(host) {
       const allowed = `<div class="answer-card"><div class="answer-card__h">${App.icon('shield')} Personal Loan Credit Policy · v3.2</div><div class="answer-card__b"><div class="minirow"><span class="muted">Min CIBIL</span><span class="spacer" style="flex:1"></span><b>700</b></div><div class="minirow"><span class="muted">Age band</span><span class="spacer" style="flex:1"></span><b>23–58</b></div><div class="minirow"><span class="muted">Max FOIR</span><span class="spacer" style="flex:1"></span><b>55%</b></div></div></div><div class="src-row"><span class="src-chip policy">${App.icon('shield')} PolicyOS</span></div>`;
-      const denied = `<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">Scoped to Risk &amp; Policy and the Founder's Office — same question, different person, different answer.</p><div class="src-row"><span class="src-chip locked">${App.icon('lock')} no access</span></div>`;
+      const denied = `<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">Scoped to Risk &amp; Policy and the Founder's Office - same question, different person, different answer.</p><div class="src-row"><span class="src-chip locked">${App.icon('lock')} no access</span></div>`;
       const frames = [{ p:'Sankalp · Admin', ok:true }, { p:'Chirag · Staff', ok:false }];
       let i = 0;
       const step = () => { if (!document.body.contains(host)) return; const f = frames[i % 2];
@@ -671,8 +671,8 @@ window.App = (function () {
         <div class="landing__hero">
           <div class="landing__copy">
             <span class="landing__eyebrow">${App.icon('lock')} On-prem · permission-aware</span>
-            <h1>Your policies,<br>answered — for<br>each person.</h1>
-            <p>The agentic policy copilot for BFSI — ask anything, simulate a change before you make it, and turn a new regulation into reviewed edits. It only ever answers from what each person is allowed to see. Bring your own model; your data never leaves.</p>
+            <h1>Your policies,<br>answered - for<br>each person.</h1>
+            <p>The agentic policy copilot for BFSI - ask anything, simulate a change before you make it, and turn a new regulation into reviewed edits. It only ever answers from what each person is allowed to see. Bring your own model; your data never leaves.</p>
             <div class="landing__cta">
               <button class="btn btn--primary" onclick="App.signIn()">Sign in ${App.icon('arrow')}</button>
               <button class="btn" onclick="document.getElementById('lp-how').scrollIntoView({behavior:'smooth'})">See how it works</button>
@@ -685,7 +685,7 @@ window.App = (function () {
         <div class="lp-section" id="lp-how">
           <div class="lp-kicker reveal">How it works</div>
           <h2 class="lp-h2 reveal">One question. The right source. The right person.</h2>
-          <p class="lp-sub reveal">Ask in plain language. Tara routes to the system that has the answer — then filters what comes back to exactly what you're allowed to see. Enforced at retrieval, not in the prompt.</p>
+          <p class="lp-sub reveal">Ask in plain language. Tara routes to the system that has the answer - then filters what comes back to exactly what you're allowed to see. Enforced at retrieval, not in the prompt.</p>
           <div class="lp-features">
             ${route('shield','Policy Q&amp;A','“Personal-loan eligibility?”, “the leave policy?” → your policy library, permission-faithful, with page citations.')}
             ${route('chart','What-if simulation','“What if we raise the CIBIL cutoff to 720?” → modelled approval / NPA impact on the test cohort.')}
@@ -693,35 +693,35 @@ window.App = (function () {
           </div>
         </div>
 
-        ${split(false, 'The boundary, live', 'Same question. Different person. Different answer.', 'Watch an admin pull the full personal-loan policy — then a staff member ask the exact same thing and hit a wall. The model never even receives what they’re not allowed to see.', 'sceneBoundary', 'boundary', 'Permission boundary')}
+        ${split(false, 'The boundary, live', 'Same question. Different person. Different answer.', 'Watch an admin pull the full personal-loan policy - then a staff member ask the exact same thing and hit a wall. The model never even receives what they’re not allowed to see.', 'sceneBoundary', 'boundary', 'Permission boundary')}
 
         <div class="lp-section--tint"><div class="lp-section">
           <div class="lp-kicker reveal">Built for regulated teams</div>
           <h2 class="lp-h2 reveal">Everything Tara does</h2>
           <div class="lp-features">
-            ${feat('shield','Permission-faithful retrieval','Every answer is scoped to the asker. The model never receives a policy the user couldn’t open — so it can’t leak what a role can’t see.')}
+            ${feat('shield','Permission-faithful retrieval','Every answer is scoped to the asker. The model never receives a policy the user couldn’t open - so it can’t leak what a role can’t see.')}
             ${feat('alert','Regulatory change management','Upload a circular; Tara checks it against every policy, drafts the redlines with page citations, and routes them for approval.')}
-            ${feat('chart','What-if impact simulation','Model a rule change on the test cohort — approval rate, NPA and reclassification — before you commit it.')}
-            ${feat('database','InsightGen — ask your data','“Top reasons for loan rejection” becomes SQL, runs on your warehouse and comes back as a chart. No analyst, no ticket.')}
+            ${feat('chart','What-if impact simulation','Model a rule change on the test cohort - approval rate, NPA and reclassification - before you commit it.')}
+            ${feat('database','InsightGen - ask your data','“Top reasons for loan rejection” becomes SQL, runs on your warehouse and comes back as a chart. No analyst, no ticket.')}
             ${feat('branch','Policy lifecycle &amp; approvals','A versioned policy library with maker-checker workflows, audit trails and side-by-side change review.')}
-            ${feat('sparkles','Bring your own model','Gemini, ChatGPT, Claude, Sarvam, Grok or Perplexity. Your key, your usage, LLM-agnostic — with an optional fallback.')}
+            ${feat('sparkles','Bring your own model','Gemini, ChatGPT, Claude, Sarvam, Grok or Perplexity. Your key, your usage, LLM-agnostic - with an optional fallback.')}
           </div>
         </div></div>
 
-        ${split(true, 'Insights on tap', 'Ask your data in plain English.', '“Top reasons for loan rejection” becomes SQL, runs on your warehouse and comes back as a chart — no analyst, no ticket. Scoped to what you can see.', 'sceneInsight', 'insight', 'InsightGen')}
+        ${split(true, 'Insights on tap', 'Ask your data in plain English.', '“Top reasons for loan rejection” becomes SQL, runs on your warehouse and comes back as a chart - no analyst, no ticket. Scoped to what you can see.', 'sceneInsight', 'insight', 'InsightGen')}
 
         <div class="lp-section">
           <div class="lp-kicker reveal">Use cases</div>
           <h2 class="lp-h2 reveal">One platform, two ways to sell it.</h2>
           <div class="usecases">
-            ${uc('BFSI','Policy governance for lenders','Compliance-grade approval trails, RBAC by product, and regulator-gap checks — the original PolicyOS, now agentic.')}
+            ${uc('BFSI','Policy governance for lenders','Compliance-grade approval trails, RBAC by product, and regulator-gap checks - the original PolicyOS, now agentic.')}
             ${uc('Compliance','From circular to approved change','Upload a new regulation; Tara shows how every policy stands against it and routes the redlines for sign-off.')}
-            ${uc('On-prem','Your data never leaves','Self-hosted and bring-your-own-LLM — keys and context stay inside your environment.')}
+            ${uc('On-prem','Your data never leaves','Self-hosted and bring-your-own-LLM - keys and context stay inside your environment.')}
           </div>
         </div>
 
         <div class="lp-cta reveal">
-          <h2>See it answer — for each person.</h2>
+          <h2>See it answer - for each person.</h2>
           <p>Sign in with a demo account and test the permission boundary yourself.</p>
           <div class="row gap-8" style="justify-content:center;margin-top:22px"><button class="btn btn--primary" onclick="App.signIn()">Sign in ${App.icon('arrow')}</button></div>
         </div>

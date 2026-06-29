@@ -1,4 +1,4 @@
-/* BRE Decoder — turn Business-Rule-Engine code into human-readable documentation */
+/* BRE Decoder - turn Business-Rule-Engine code into human-readable documentation */
 App.registerView('bredecoder', {
   title: 'BRE Decoder',
   render(ctx) {
@@ -13,11 +13,11 @@ App.registerView('bredecoder', {
     };
     return `<div class="page">
       <div class="page__head">
-        <div><h1>BRE Decoder</h1><p>Paste raw business-rule-engine logic and Tara turns it into clean, reviewable documentation — what it does, the step-by-step logic, and the business interpretation.</p></div>
+        <div><h1>BRE Decoder</h1><p>Paste raw business-rule-engine logic and Tara turns it into clean, reviewable documentation - what it does, the step-by-step logic, and the business interpretation.</p></div>
         <div class="spacer"></div>
         <span class="pill pill--teal">${App.icon('sparkles')} Claude · on-prem</span>
       </div>
-      <div class="info-banner">${App.icon('info')} <span>Decoding runs <strong>locally on your BYO-LLM gateway</strong> — rule logic never leaves your environment. Output is editable before export.</span></div>
+      <div class="info-banner">${App.icon('info')} <span>Decoding runs <strong>locally on your BYO-LLM gateway</strong> - rule logic never leaves your environment. Output is editable before export.</span></div>
       <div class="grid" id="breGrid" style="grid-template-columns:minmax(0,0.95fr) minmax(0,1.05fr);align-items:start">
         <div id="breInput">${App.bredecoderView.inputHtml()}</div>
         <div id="breOutput">${App.bredecoderView.outputHtml()}</div>
@@ -32,7 +32,7 @@ App.registerView('bredecoder', {
 App.bredecoderView = {
 
   SAMPLE:
-`/* Loan Eligibility Rule — Personal Loan */
+`/* Loan Eligibility Rule - Personal Loan */
 (
   $age := applicant.age;
   $cibil := applicant.cibil_score;
@@ -60,8 +60,8 @@ App.bredecoderView = {
       </div>
       <div class="card__body">
         ${s.source==='file'
-          ? `<div class="pdf-ph" id="breDrop" style="min-height:auto;padding:26px;text-align:center;cursor:pointer" onclick="App.bredecoderView.fauxUpload()">${App.icon('download')}<div class="muted" style="margin-top:8px;font-size:12.5px">Click to upload a rule file — <strong>.txt / .json / .drl</strong> (≤ 2 MB)</div></div>
-             <div class="field hint" style="margin-top:10px">Uploaded files are parsed into the editor below — review before generating.</div>`
+          ? `<div class="pdf-ph" id="breDrop" style="min-height:auto;padding:26px;text-align:center;cursor:pointer" onclick="App.bredecoderView.fauxUpload()">${App.icon('download')}<div class="muted" style="margin-top:8px;font-size:12.5px">Click to upload a rule file - <strong>.txt / .json / .drl</strong> (≤ 2 MB)</div></div>
+             <div class="field hint" style="margin-top:10px">Uploaded files are parsed into the editor below - review before generating.</div>`
           : ''}
         <div class="field">
           <label>Rule logic <span class="req">*</span></label>
@@ -94,7 +94,7 @@ App.bredecoderView = {
 
   placeholderHtml() {
     return `<div class="card" style="min-height:480px;display:flex;align-items:center;justify-content:center">
-      ${App.ui.empty('book', 'Documentation appears here', 'Paste a rule on the left and hit Generate docs — Tara explains the logic in plain English.')}
+      ${App.ui.empty('book', 'Documentation appears here', 'Paste a rule on the left and hit Generate docs - Tara explains the logic in plain English.')}
     </div>`;
   },
 
@@ -152,13 +152,13 @@ App.bredecoderView = {
         <pre class="code" style="margin:8px 0 18px">${codeBlock}</pre>
 
         <h3 style="font-size:15px;margin-bottom:8px">What this rule does</h3>
-        <p style="color:var(--ink-2);margin-bottom:18px">This rule decides whether a personal-loan applicant is <strong>eligible</strong>. It checks two things about the applicant — their <strong>age</strong> and their <strong>CIBIL credit score</strong>. If the applicant is between <strong>21 and 60 years old (inclusive)</strong> <em>and</em> has a CIBIL score of <strong>700 or higher</strong>, the rule returns <strong>APPROVED</strong>. If either condition fails, it returns <strong>REJECTED</strong> with the reason that the applicant is outside the age band or below the bureau cutoff.</p>
+        <p style="color:var(--ink-2);margin-bottom:18px">This rule decides whether a personal-loan applicant is <strong>eligible</strong>. It checks two things about the applicant - their <strong>age</strong> and their <strong>CIBIL credit score</strong>. If the applicant is between <strong>21 and 60 years old (inclusive)</strong> <em>and</em> has a CIBIL score of <strong>700 or higher</strong>, the rule returns <strong>APPROVED</strong>. If either condition fails, it returns <strong>REJECTED</strong> with the reason that the applicant is outside the age band or below the bureau cutoff.</p>
 
         <h3 style="font-size:15px;margin-bottom:8px">Step-by-step logic <span class="muted" style="font-weight:400;font-size:12.5px">(in the same order as written)</span></h3>
         <div style="margin-bottom:18px">
           ${App.bredecoderView.step(1, '<code>$age := applicant.age</code>', 'Read the applicant’s age from the input payload into a local variable <b>$age</b>.')}
           ${App.bredecoderView.step(2, '<code>$cibil := applicant.cibil_score</code>', 'Read the applicant’s bureau score into a local variable <b>$cibil</b>.')}
-          ${App.bredecoderView.step(3, '<code>$age &gt;= 21 and $age &lt;= 60</code>', 'Confirm the applicant falls inside the permitted age band — at least 21 and at most 60. Both bounds are inclusive.')}
+          ${App.bredecoderView.step(3, '<code>$age &gt;= 21 and $age &lt;= 60</code>', 'Confirm the applicant falls inside the permitted age band - at least 21 and at most 60. Both bounds are inclusive.')}
           ${App.bredecoderView.step(4, '<code>and $cibil &gt;= 700</code>', 'In addition to the age check, require a CIBIL score of 700 or more. The <b>and</b> means <b>both</b> the age band and the score must pass.')}
           ${App.bredecoderView.step(5, '<code>? { "decision": "APPROVED" … }</code>', 'When every condition above is true, return an APPROVED object with a confirming reason.')}
           ${App.bredecoderView.step(6, '<code>: { "decision": "REJECTED" … }</code>', 'Otherwise (the ternary <b>else</b> branch) return REJECTED, citing the age band or the sub-700 score as the cause.')}
@@ -175,11 +175,11 @@ App.bredecoderView = {
 
         <h3 style="font-size:15px;margin-bottom:8px">Notes / assumptions</h3>
         <ul style="color:var(--ink-2);margin:0;padding-left:20px;line-height:1.7">
-          <li>Both age bounds are treated as <strong>inclusive</strong> — exactly 21 and exactly 60 are accepted.</li>
+          <li>Both age bounds are treated as <strong>inclusive</strong> - exactly 21 and exactly 60 are accepted.</li>
           <li>The score threshold uses <strong>≥ 700</strong>, so a CIBIL of exactly 700 passes.</li>
           <li>Assumes <code>applicant.age</code> and <code>applicant.cibil_score</code> are present and numeric; a missing or null field would cause the comparison to fail and route to <strong>REJECTED</strong>.</li>
-          <li>This rule only covers eligibility screening — FOIR, minimum income (₹25,000/mo) and tenure limits are enforced by downstream rules.</li>
-          <li>Note: PolicyOS shows a pending change (REQ-1041) to raise the CIBIL cutoff from 700 to 720 — re-decode after it is approved.</li>
+          <li>This rule only covers eligibility screening - FOIR, minimum income (₹25,000/mo) and tenure limits are enforced by downstream rules.</li>
+          <li>Note: PolicyOS shows a pending change (REQ-1041) to raise the CIBIL cutoff from 700 to 720 - re-decode after it is approved.</li>
         </ul>
       </div>
     </div>`;

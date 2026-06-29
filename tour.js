@@ -1,8 +1,8 @@
 /* ============================================================
-   PolicyOS · Tara — interactive guided tour
+   PolicyOS · Tara - interactive guided tour
    A spotlight (punched-hole scrim + accent ring) steps the user through
    the REAL app: sidebar, Ask-Tara, their role's first block, ⌘K, persona
-   switch — then a role-aware "what's next" finish. Runs once per browser,
+   switch - then a role-aware "what's next" finish. Runs once per browser,
    relaunchable from the bottom-left chip or the user menu.
    ============================================================ */
 (function () {
@@ -13,15 +13,15 @@
     steps: [], i: 0,
 
     stepsFor(u) {
-      const firstCard = { sel: '.content .grid', title: 'Your home', body: 'Quick actions, the numbers that matter, and what needs your attention — all in one place. Ask Tara is your front door for anything ad-hoc.' };
+      const firstCard = { sel: '.content .grid', title: 'Your home', body: 'Quick actions, the numbers that matter, and what needs your attention - all in one place. Ask Tara is your front door for anything ad-hoc.' };
       return [
         { center: true, title: 'Welcome to PolicyOS · Tara', body: 'A 30-second tour of the on-prem, permission-faithful company brain. Skip anytime.' },
-        { sel: '.sidebar .nav', title: 'Role-aware navigation', body: 'The sidebar shows only what your role can use — Administration is admin-only.' },
-        { sel: '.chat-launch', title: 'Ask Tara, anywhere', body: 'Ask your policies in plain English — eligibility, a leave rule, a what-if. Tara answers only from what you’re allowed to see, and cites the page.' },
+        { sel: '.sidebar .nav', title: 'Role-aware navigation', body: 'The sidebar shows only what your role can use - Administration is admin-only.' },
+        { sel: '.chat-launch', title: 'Ask Tara, anywhere', body: 'Ask your policies in plain English - eligibility, a leave rule, a what-if. Tara answers only from what you’re allowed to see, and cites the page.' },
         firstCard,
         { sel: '.sidebar__search', title: 'Jump with ⌘K', body: 'Open the command palette to jump to any page, find a person, or ask Tara from anywhere.' },
-        { sel: '.userchip', title: 'See the permission boundary', body: 'Switch persona here. Ask the same question as a staff user vs an admin and watch the answer change — that’s permission-faithful retrieval.' },
-        { finish: true, title: 'You’re all set', body: 'Pick a place to start — or relaunch this tour anytime from the bottom-left.' }
+        { sel: '.userchip', title: 'See the permission boundary', body: 'Switch persona here. Ask the same question as a staff user vs an admin and watch the answer change - that’s permission-faithful retrieval.' },
+        { finish: true, title: 'You’re all set', body: 'Pick a place to start - or relaunch this tour anytime from the bottom-left.' }
       ];
     },
 

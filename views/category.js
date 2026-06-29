@@ -1,4 +1,4 @@
-/* Categories — policy category management (Admin only) */
+/* Categories - policy category management (Admin only) */
 App.registerView('category', {
   title: 'Categories',
   render(ctx) {
@@ -39,7 +39,7 @@ App.registerView('category', {
         <button class="btn" onclick="App.categoryView.addSub()">${App.icon('plus')} Add Sub-Category</button>
         <button class="btn btn--primary" onclick="App.categoryView.add()">${App.icon('plus')} Add Category</button>
       </div>
-      <div class="info-banner">${App.icon('layers')} <span><strong>${DB.categories.length} categories</strong> · ${totalSubs} sub-categories in use. Disabling a category hides it and its policies everywhere — repository, filters, dropdowns and Tara — while keeping the underlying data intact.</span></div>
+      <div class="info-banner">${App.icon('layers')} <span><strong>${DB.categories.length} categories</strong> · ${totalSubs} sub-categories in use. Disabling a category hides it and its policies everywhere - repository, filters, dropdowns and Tara - while keeping the underlying data intact.</span></div>
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="catSearch" placeholder="Search categories…"/></div>
       </div>
@@ -61,7 +61,7 @@ App.categoryView = {
   toggle(btn, name) {
     const c = DB.categories.find(x => x.name === name); if (!c) return;
     const now = c.enabled !== false; c.enabled = !now;
-    App.toast(`“${name}” ${c.enabled ? 'enabled — now visible' : 'disabled — hidden from filters, lists & Tara'}`, c.enabled ? 'ok' : 'warn');
+    App.toast(`“${name}” ${c.enabled ? 'enabled - now visible' : 'disabled - hidden from filters, lists & Tara'}`, c.enabled ? 'ok' : 'warn');
     App.reload();
   },
 

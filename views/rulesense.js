@@ -1,4 +1,4 @@
-/* RuleSense AI — policies → executable rules → BRE code (JSONata) */
+/* RuleSense AI - policies → executable rules → BRE code (JSONata) */
 App.registerView('rulesense', {
   title: 'RuleSense AI',
   render(ctx) {
@@ -46,7 +46,7 @@ App.registerView('rulesense', {
     return `<div class="page">
       <div class="page__head"><div><h1>RuleSense AI</h1><p>Convert policy documents into executable rules, then auto-generate BRE-ready code. Pick a policy to open the rule editor.</p></div></div>
       <div class="info-banner">${App.icon('zap')} <span><strong>RuleSense</strong> reads your policy PDF, extracts structured logic (trigger → condition → action), and compiles it to a Business Rules Engine expression you can test and deploy.</span></div>
-      ${hidden ? `<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} polic${hidden > 1 ? 'ies are' : 'y is'} hidden</strong> — outside your role's access scope.</span></div>` : ''}
+      ${hidden ? `<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} polic${hidden > 1 ? 'ies are' : 'y is'} hidden</strong> - outside your role's access scope.</span></div>` : ''}
       <div class="grid grid-2">${cards}</div>
     </div>`;
   },
@@ -285,7 +285,7 @@ App.rulesenseView = {
     const rows = maps.map(m => `<tr>
         <td><span class="mono" style="font-size:12.5px">${App.esc(m.src)}</span></td>
         <td>${App.icon('arrow')}</td>
-        <td><span class="mono" style="font-size:12.5px">${m.dest ? App.esc(m.dest) : '—'}</span></td>
+        <td><span class="mono" style="font-size:12.5px">${m.dest ? App.esc(m.dest) : '-'}</span></td>
         <td>${m.dest ? App.ui.pill('Mapped', 'green') : App.ui.pill('Unmapped', 'amber')}</td>
       </tr>`).join('');
     App.openModal({
@@ -414,7 +414,7 @@ App.rulesenseView = {
 
     // Translate one IF...THEN rule into a JSONata $.applicant condition line.
     // NOTE: this string is interpolated into innerHTML, so EVERY literal '<' / '>'
-    // operator must be HTML-escaped (App.esc) — otherwise the browser parses
+    // operator must be HTML-escaped (App.esc) - otherwise the browser parses
     // "bureauScore < 700 ? <span" as a stray tag and eats the comparison.
     const lines = (p.rules || []).map(r => {
       const pr = this.parseRule(r);

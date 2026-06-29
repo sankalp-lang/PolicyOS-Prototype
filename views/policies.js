@@ -1,4 +1,4 @@
-/* Policies — repository with permission-faithful (RBAC) filtering */
+/* Policies - repository with permission-faithful (RBAC) filtering */
 App.registerView('policies', {
   title: 'Policies',
   render(ctx) {
@@ -22,7 +22,7 @@ App.registerView('policies', {
     return `<div class="page">
       <div class="page__head"><div><h1>Policies</h1><p>Manage, view and query all active policies. You see only what your role can access.</p></div><div class="spacer"></div>
         ${canAdd?`<button class="btn btn--primary" onclick="App.policiesView.add()">${App.icon('plus')} Add Policy</button>`:''}</div>
-      ${hidden?`<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} polic${hidden>1?'ies are':'y is'} hidden</strong> — outside your role's access scope. Permission is enforced at retrieval, not hidden in the UI alone.</span></div>`:''}
+      ${hidden?`<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} polic${hidden>1?'ies are':'y is'} hidden</strong> - outside your role's access scope. Permission is enforced at retrieval, not hidden in the UI alone.</span></div>`:''}
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="polSearch" placeholder="Search policies…"/></div>
         <select class="select" id="polCat"><option value="">All categories</option>${App.enabledCats().map(c=>`<option>${c.name}</option>`).join('')}</select>

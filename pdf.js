@@ -102,12 +102,14 @@
       page = Math.max(1, Math.min(doc.pages.length, page));
       const showHl = (hl && (doc.pages[page - 1].blocks || []).some(b => matches(b.anchor, hl))) ? hl : null;
       const a = hl ? `'${String(hl).replace(/'/g, "\\'")}'` : 'null';
+      const fb = opts.fullBtn ? ',fullBtn:true' : '';
       const nav = `<div class="pdfnav">
-        <button class="btn btn--sm" ${page <= 1 ? 'disabled' : ''} onclick="App.pdf.renderInto('${hostId}','${kind}','${id}',{page:${page - 1},anchor:${a}})">‹ Prev</button>
+        <button class="btn btn--sm" ${page <= 1 ? 'disabled' : ''} onclick="App.pdf.renderInto('${hostId}','${kind}','${id}',{page:${page - 1},anchor:${a}${fb}})">‹ Prev</button>
         <span class="pdfnav__pg">Page ${page} / ${doc.pages.length}</span>
-        <button class="btn btn--sm" ${page >= doc.pages.length ? 'disabled' : ''} onclick="App.pdf.renderInto('${hostId}','${kind}','${id}',{page:${page + 1},anchor:${a}})">Next ›</button>
+        <button class="btn btn--sm" ${page >= doc.pages.length ? 'disabled' : ''} onclick="App.pdf.renderInto('${hostId}','${kind}','${id}',{page:${page + 1},anchor:${a}${fb}})">Next ›</button>
       </div>`;
-      host.innerHTML = `<div class="pdfviewer">${pageHTML(doc, page, showHl)}${nav}</div>`;
+      const fullRow = opts.fullBtn ? `<div class="pdf-fullrow"><button class="btn btn--sm" onclick="App.pdf.openFull('${kind}','${id}',{page:${page},anchor:${a}})">⤢ View full page</button></div>` : '';
+      host.innerHTML = `<div class="pdfviewer">${pageHTML(doc, page, showHl)}${fullRow}${nav}</div>`;
     },
 
     // small floating window (used by citation chips, from anywhere)
@@ -129,7 +131,25 @@
       PDF.renderInto('pdfWinBody', opts.kind, opts.id, { page: opts.page, anchor: opts.anchor });
     },
     openCite(kind, id, a) { const n = Number(a); PDF.open({ kind: kind, id: id, anchor: (a !== '' && a != null && !isNaN(n) && String(n) === String(a)) ? n : a }); },
-    close() { const w = document.getElementById('pdfWin'); if (w) w.classList.remove('show'); },
+    close() { ['pdfWin', 'pdfFull'].forEach(function (idd) { const w = document.getElementById(idd); if (w) w.classList.remove('show'); }); },
+
+    // full-screen page view (opened from the "View full page" button in an inline viewer)
+    _full() {
+      let w = document.getElementById('pdfFull');
+      if (!w) {
+        w = document.createElement('div'); w.id = 'pdfFull'; w.className = 'pdffull';
+        w.innerHTML = '<div class="pdffull__panel"><div class="pdffull__h">' + App.icon('file') + '<span class="pdffull__t" id="pdfFullTitle"></span><div style="flex:1"></div><button class="modal__x" onclick="App.pdf.closeFull()" aria-label="Close">' + App.icon('x') + '</button></div><div class="pdffull__b" id="pdfFullBody"></div></div>';
+        w.addEventListener('click', function (e) { if (e.target === w) PDF.closeFull(); });
+        document.body.appendChild(w);
+      }
+      return w;
+    },
+    openFull(kind, id, opts) {
+      opts = opts || {}; const doc = build(kind, id); const w = PDF._full(); w.classList.add('show');
+      const t = document.getElementById('pdfFullTitle'); if (t) t.textContent = doc.title;
+      PDF.renderInto('pdfFullBody', kind, id, { page: opts.page, anchor: opts.anchor });
+    },
+    closeFull() { const w = document.getElementById('pdfFull'); if (w) w.classList.remove('show'); },
 
     // inline clickable citation chip — "📄 Personal Loan Credit Policy · p.2"
     cite(kind, id, anchorOrPage, label) {

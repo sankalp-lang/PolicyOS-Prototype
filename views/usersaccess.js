@@ -50,7 +50,7 @@ App.usersAccessView = {
     }).join('');
     const prov = DB.employees.filter(e => App.usersAccessView.provisioned(e.id)).length;
     const src = 'Roles &amp; access are managed here, by team and category.';
-    return `<div class="info-banner">${App.icon('users')} <span><strong>${prov} of ${DB.employees.length}</strong> people are provisioned with a PolicyOS role. ${src} Compensation stays gated to People &amp; Talent and the Founder's Office.</span></div>
+    return `<div class="info-banner">${App.icon('users')} <span><strong>${prov} of ${DB.employees.length}</strong> people are provisioned with a PolicyOS role. ${src}</span></div>
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="uaSearch" placeholder="Search people…"/></div>
         <select class="select" id="uaTeam"><option value="">All teams</option>${DB.teams.map(t => `<option>${t.name}</option>`).join('')}</select>

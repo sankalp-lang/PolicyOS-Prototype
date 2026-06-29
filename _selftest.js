@@ -154,6 +154,15 @@ chk(navAdmin.groups.some(function(g){return g.title==='Administration' && g.item
 chk(!navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Connectors parked — not in admin nav');
 chk(!navPM.groups.some(function(g){return g.title==='Administration';}), 'Policy Manager does NOT see Administration');
 chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='assessments';});}), 'Assessments lives under Company Brain');
+chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='policies';});}), 'Policies now live under Company Brain');
+chk(App.navModel(staff).groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='policies';});}), 'Staff: Policies under Company Brain too');
+// Compensation removed entirely + full-page PDF view
+chk(App.canSeeComp() === false, 'Comp: canSeeComp() is false for everyone');
+chk(typeof DB.compensation === 'undefined', 'Comp: per-person compensation data removed');
+chk(!DB.policies.some(function(p){return p.id==='P-COMP';}), 'Comp: Compensation & Salary Bands policy removed from the library');
+chk(!/compensation/i.test(App.llm.buildContext(admin)), 'Comp: no compensation anywhere in the LLM context');
+var _salAns = App.askTara("what's anmol's salary", App.state.user = admin); chk(!/CTC|₹[0-9]/.test(_salAns.html), 'Comp: Tara returns no salary figures to anyone');
+chk(typeof App.pdf.openFull === 'function' && typeof App.pdf.closeFull === 'function', 'PDF: full-page view (openFull) available');
 chk(!navAdmin.groups.some(function(g){return g.items.some(function(i){return ['directory','access','usermgmt'].indexOf(i.id)>=0;});}), 'Old directory/access/usermgmt removed from nav');
 
 // Feature 1 — Impact simulator

@@ -12,7 +12,7 @@ App.registerView('directory', {
       </tr>`).join('');
     return `<div class="page">
       <div class="page__head"><div><h1>People Directory</h1><p>${DB.employees.length} people across ${DB.teams.length} teams.</p></div></div>
-      <div class="info-banner">${App.icon('plug')} <span>Synced from <strong>Keka HRMS</strong> · 8 min ago. Compensation is gated to People &amp; Talent and the Founder's Office.</span></div>
+      <div class="info-banner">${App.icon('plug')} <span>Synced from <strong>Keka HRMS</strong> · 8 min ago.</span></div>
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="dirSearch" placeholder="Search by name or email…"/></div>
         <select class="select" id="dirTeam"><option value="">All teams</option>${DB.teams.map(t=>`<option>${t.name}</option>`).join('')}</select>
@@ -40,9 +40,7 @@ App.registerView('directory', {
 
 App.directoryView = {
   profile(id) {
-    const e = App.emp(id); const u = App.currentUser();
-    const canComp = App.canSeeComp(u);
-    const comp = canComp ? (DB.compensation[id] || 'Band L3 · ₹20–28L (indicative)') : null;
+    const e = App.emp(id);
     const issues = DB.jiraIssues.filter(i=>i.assignee===id);
     App.openModal({
       title: e.name, sub: e.title+' · '+e.team,
@@ -50,7 +48,6 @@ App.directoryView = {
         <div class="minirow"><span class="muted">Employee ID</span><span class="spacer" style="flex:1"></span><b class="mono">${e.id}</b></div>
         <div class="minirow"><span class="muted">Email</span><span class="spacer" style="flex:1"></span><b>${App.esc(e.email)}</b></div>
         <div class="minirow"><span class="muted">Team</span><span class="spacer" style="flex:1"></span><b>${App.esc(e.team)}</b></div>
-        <div class="minirow"><span class="muted">Compensation</span><span class="spacer" style="flex:1"></span>${comp?`<b>${App.esc(comp)}</b>`:`<span class="pill pill--red">${App.icon('lock')} Restricted</span>`}</div>
         ${issues.length?`<div class="divider"></div><b style="font-size:12.5px">Working on (Jira)</b>${issues.map(i=>`<div class="minirow"><span class="mono" style="font-size:11px;color:var(--muted);width:64px">${i.key}</span><span style="flex:1">${App.esc(i.title)}</span>${App.ui.statusPill(i.status)}</div>`).join('')}`:''}`,
       footer: `<button class="btn" onclick="App.closeModal()">Close</button><button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('What is ${e.name.split(' ')[0]} working on?')">${App.icon('sparkles')} Ask Tara</button>`
     });

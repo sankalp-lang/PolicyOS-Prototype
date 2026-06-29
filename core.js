@@ -105,7 +105,7 @@ window.App = (function () {
   App.catEnabled = (name) => { const c = DB.categories.find(x => x.name === name); return !c || c.enabled !== false; };
   App.enabledCats = () => DB.categories.filter(c => c.enabled !== false);
   App.visiblePolicies = user => DB.policies.filter(p => App.catEnabled(p.category) && App.canViewPolicy(p, user));
-  App.canSeeComp = user => { user = user||App.state.user; return user.role==='admin' || user.hrAdmin || user.team==='People & Talent' || user.team==="Founder's Office"; };
+  App.canSeeComp = () => false;  // compensation removed entirely — not visible to anyone
 
   /* ---------------- CONNECTORS PARKED (picked up ~2 months out) — single version, no editions ----------------
      Tara is policy-centric for now. These stubs keep every call site safe and policy-focused;
@@ -172,19 +172,7 @@ window.App = (function () {
       }
     }
 
-    // ---- 1) Compensation / salary (GATED) ----
-    if (hrmsOn && has('salary','compensation',' ctc',' pay ','package','esop','income of','earn')) {
-      if (!App.canSeeComp(user)) {
-        return { html:`<p>🔒 <strong>You don't have access to compensation data.</strong></p><p class="muted" style="margin-top:6px">Salary &amp; band information is restricted to <strong>People &amp; Talent</strong> and the <strong>Founder's Office</strong>. Tara only ever returns what your role is permitted to see in the source system.</p>`,
-                 sources:[{kind:'locked',label:'HRMS · compensation (no access)'}] };
-      }
-      if (emp) {
-        const c = DB.compensation[emp.id] || 'Band L3 · ₹20–28L (indicative)';
-        return { html:`<p>Here's the compensation on record for <strong>${App.esc(emp.name)}</strong> (${App.esc(emp.title)}):</p>${ansCard('Compensation · confidential','lock',`<div class="minirow"><span class="muted">Annual CTC</span><span class="spacer" style="flex:1"></span><b>${App.esc(c)}</b></div>`)}<p class="muted" style="margin-top:8px;font-size:12px">Visible to you because you're in <strong>${App.esc(user.team)}</strong>.</p>`,
-                 sources:[{kind:'hrms',label:'Keka HRMS · compensation'}] };
-      }
-      return { html:`<p>You have access to compensation data. Ask about a specific person, e.g. <em>“what's Anmol's salary?”</em>, or open the <strong>Compensation &amp; Salary Bands Policy</strong> for band structure.</p>`, sources:[{kind:'hrms',label:'Keka HRMS'}] };
-    }
+    // (compensation / salary answers removed — not surfaced to anyone)
 
     // ---- 2) Jira / who is working on what ----
     if (jiraOn && has('working on','work on','building','what is','whats','doing','jira','ticket','issue','sprint','progress','tasks','task ','status of','assigned')) {
@@ -251,7 +239,6 @@ window.App = (function () {
     const topicMap = [
       {kw:['leave','vacation','holiday','sick','maternity','paternity'], id:'P-LEAVE'},
       {kw:['travel','expense','reimburs','per diem','per-diem'], id:'P-TRAVEL'},
-      {kw:['salary band','compensation policy','esop','increment','leveling'], id:'P-COMP'},
       {kw:['kyc','aml','money laundering','pep','due diligence'], id:'P-KYC'},
       {kw:['security','infosec','mfa','encryption','device'], id:'P-ISEC'},
       {kw:['personal loan','pl ','cibil','foir','unsecured'], id:'P-PL'},
@@ -337,23 +324,24 @@ window.App = (function () {
     if (user.role === 'user') {
       return { pinned: [ { id:'dashboard', label:'Home', icon:'home' }, { id:'copilot', label:'Ask Tara', icon:'sparkles', tag:'AI' } ],
         groups: [
-          { title:'Knowledge', items:[ {id:'policies',label:'Policies',icon:'file'}, {id:'polygpt',label:'PolyGPT',icon:'chat'}, {id:'assessments',label:'My Assessments',icon:'clipboard'} ] }
+          { title:'Company Brain', items:[ {id:'policies',label:'Policies',icon:'file'}, {id:'polygpt',label:'PolyGPT',icon:'chat'}, {id:'assessments',label:'My Assessments',icon:'clipboard'} ] }
         ] };
     }
     const pinned = [ { id:'dashboard', label:'Dashboard', icon:'home' }, { id:'copilot', label:'Ask Tara', icon:'sparkles', tag:'AI' } ];
-    const groups = [{ title:'Policy Management', items: [
-      { id:'policies', label:'Policies', icon:'file' },
-      { id:'polygpt', label:'PolyGPT', icon:'chat' },
-      { id:'rulesense', label:'RuleSense AI', icon:'code' },
-      { id:'approvals', label:'Approvals', icon:'branch' },
-      { id:'regulatory', label:'Regulatory', icon:'alert' },
-      { id:'bredecoder', label:'BRE Decoder', icon:'key' },
-      { id:'insightgen', label:'InsightGen', icon:'chart' }
-    ] }];
-    // Assessments now lives under Company Brain
-    const brain = [];
+    // Company Brain: the policy knowledge surface — Policies live here, alongside Assessments
+    const brain = [ { id:'policies', label:'Policies', icon:'file' } ];
     if (user.role==='policy_manager'||user.role==='admin'||user.role==='assessment_manager') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
-    if (brain.length) groups.push({ title:'Company Brain', items: brain });
+    const groups = [
+      { title:'Company Brain', items: brain },
+      { title:'Policy Management', items: [
+        { id:'polygpt', label:'PolyGPT', icon:'chat' },
+        { id:'rulesense', label:'RuleSense AI', icon:'code' },
+        { id:'approvals', label:'Approvals', icon:'branch' },
+        { id:'regulatory', label:'Regulatory', icon:'alert' },
+        { id:'bredecoder', label:'BRE Decoder', icon:'key' },
+        { id:'insightgen', label:'InsightGen', icon:'chart' }
+      ] }
+    ];
     // Administration: ADMIN ONLY. (Connectors parked — picked up ~2 months out.)
     if (user.role==='admin') {
       const admin = [ { id:'usersaccess', label:'Users & access', icon:'users' },

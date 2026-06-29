@@ -74,11 +74,7 @@ window.DB = (function () {
     { id:'THQDUM0002', name:'Sushma Sahore',       email:'gst@spdsllp.com',                team:'Finance',          title:'GST / Compliance (Vendor)', presence:'remote', checkin:'—' }
   ];
 
-  // dummy compensation (GATED — only People & Talent / Founder's Office / admin can retrieve)
-  const compensation = {
-    'THQ0144': '₹48,00,000 / yr', 'THQ0101': '₹32,00,000 / yr', 'THQ0118': '₹38,00,000 / yr',
-    'THQ0125': '₹18,00,000 / yr', 'THQ0128': '₹42,00,000 / yr'
-  };
+  // compensation data removed entirely — not visible to anyone
 
   const teams = [
     { name:"Founder's Office", lead:'Pramey Jain',      color:'#4f46e5' },
@@ -123,7 +119,7 @@ window.DB = (function () {
   /* ---------- Policy categories ---------- */
   const categories = [
     { name:'Lending',    subs:['Personal Loan','Two-Wheeler','MSME','Home Loan','Collections'], color:'#2f49c4', enabled:true },
-    { name:'HR',         subs:['Leave','Compensation','Travel & Expense'],                       color:'#5e4d83', enabled:true },
+    { name:'HR',         subs:['Leave','Travel & Expense'],                       color:'#5e4d83', enabled:true },
     { name:'Compliance', subs:['KYC / AML','Information Security','Regulatory Updates'],          color:'#3a7479', enabled:true }
   ];
 
@@ -180,12 +176,7 @@ window.DB = (function () {
       access:{ everyone:true, roles:[], teams:[], users:[] },
       summary:'Domestic and international travel approvals, per-diems, and reimbursement timelines.',
       facts:{ 'Domestic hotel cap':'₹5,000 / night', 'Per-diem (metro)':'₹1,500 / day', 'Approval':'Manager + Finance', 'Reimbursement':'Within 7 working days' },
-      rules:['IF expense > 5000 THEN manager approval required','IF international THEN founder approval'] },
-    { id:'P-COMP',name:'Compensation & Salary Bands Policy', category:'HR', sub:'Compensation', owner:'THQ0145', status:'Active', version:'v1.1', updated:'05 Jun 2026', sensitive:true,
-      access:{ everyone:false, roles:[], teams:['People & Talent',"Founder's Office"], users:[] },
-      summary:'CONFIDENTIAL. Salary bands, leveling, increment cycles and ESOP grant guidelines. Restricted to People & Talent and Founder’s Office.',
-      facts:{ 'Levels':'L1–L8', 'Increment cycle':'Annual (April)', 'ESOP cliff':'1 year', 'Band review':'Half-yearly' },
-      rules:['IF level >= L6 THEN founder approval for offer','IF increment > 25% THEN COO approval'] }
+      rules:['IF expense > 5000 THEN manager approval required','IF international THEN founder approval'] }
   ];
 
   /* ---------- Login personas (no passwords — pick & go) ----------
@@ -396,7 +387,7 @@ window.DB = (function () {
       ] }
   ];
 
-  return { employees, compensation, teams, jiraProjects, jiraIssues, categories, policies,
+  return { employees, teams, jiraProjects, jiraIssues, categories, policies,
            users, roleLabels, workflows, approvals, assessments, insights, rejectionReasons,
            connectors, company, simParams, testBase, circulars, incomingCirculars, amendments };
 })();

@@ -68,7 +68,7 @@ App.policiesView = {
         ${canRules?`<button class="btn btn--primary" onclick="App.closeModal();App.navigate('rulesense',{policy:'${p.id}'})">${App.icon('code')} View Rules</button>`:''}
         <button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('Tell me about ${p.name.replace(/'/g,"")}')">${App.icon('sparkles')} Ask Tara</button>`
     });
-    if (App.pdf) App.pdf.renderInto('polPdfPane', 'policy', p.id);
+    if (App.pdf) App.pdf.renderInto('polPdfPane', 'policy', p.id, { fullBtn: true });
   },
   add() {
     App.openModal({

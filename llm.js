@@ -101,14 +101,13 @@
     buildContext(user) {
       const hrmsOn = App.hasSource && (App.hasSource('keka') || App.hasSource('greythr'));
       const jiraOn = App.hasSource && App.hasSource('jira');
-      const canComp = App.canSeeComp(user);
       const vis = App.visiblePolicies(user);
       const pol = vis.map(p => '### ' + p.name + ' (' + p.version + ', ' + p.category + ')\n' + p.summary + '\nKey parameters: ' + Object.entries(p.facts).map(([k, v]) => k + ': ' + v).join('; ') + '\nRules: ' + p.rules.join(' | ')).join('\n\n');
       const hidden = DB.policies.length - vis.length;
       const polBlock = '## POLICIES THIS USER MAY ACCESS (PolicyOS) — ' + vis.length + ' of ' + DB.policies.length + '\n' + (pol || '(none in scope)') + '\n\n[' + hidden + ' other policies exist but are OUTSIDE this user\'s scope and are not included.]';
       let ctx = 'COMPANY: ' + DB.company.name + '\n\n';
       if (hrmsOn) {
-        const people = DB.employees.map(e => { let s = '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence); if (canComp && DB.compensation[e.id]) s += ' | compensation: ' + DB.compensation[e.id]; return s; }).join('\n');
+        const people = DB.employees.map(e => '- ' + e.name + ' | ' + e.title + ' | team: ' + e.team + ' | today: ' + (e.presence === 'office' ? 'in office (' + e.checkin + ')' : e.presence)).join('\n');
         const teams = DB.teams.map(t => '- ' + t.name + ' (lead ' + t.lead + ', ' + DB.employees.filter(e => e.team === t.name).length + ')').join('\n');
         ctx += '## PEOPLE (Keka HRMS)\n' + people + '\n\n## TEAMS\n' + teams + '\n\n';
       }
@@ -116,7 +115,7 @@
         const jira = DB.jiraIssues.map(i => '- ' + i.key + ' | ' + i.title + ' | assignee ' + App.emp(i.assignee).name + ' | ' + ((DB.jiraProjects.find(p => p.key === i.project) || {}).name) + ' | ' + i.status).join('\n');
         ctx += '## WORK IN PROGRESS (Jira)\n' + jira + '\n\n';
       }
-      ctx += polBlock + (canComp ? '' : '\n[Compensation NOT included — user not permitted.]');
+      ctx += polBlock;
       if (!hrmsOn && !jiraOn) ctx += '\n\n[Only the policy library is connected in this deployment — answer from policies only.]';
       return ctx;
     },

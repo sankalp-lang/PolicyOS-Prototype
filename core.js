@@ -107,34 +107,24 @@ window.App = (function () {
   App.visiblePolicies = user => DB.policies.filter(p => App.catEnabled(p.category) && App.canViewPolicy(p, user));
   App.canSeeComp = user => { user = user||App.state.user; return user.role==='admin' || user.hrAdmin || user.team==='People & Talent' || user.team==="Founder's Office"; };
 
-  /* ---------------- edition (deployment model only — BOTH have connectors) ----------------
-     Standard = cloud-hosted / managed · Enterprise = on-prem (your infra, data never leaves). */
-  App.edition = () => { try { return localStorage.getItem('tara_edition') || 'standard'; } catch (e) { return 'standard'; } };
-  App.setEdition = (ed) => { try { localStorage.setItem('tara_edition', ed); } catch (e) {} renderShell(); App.navigate('dashboard'); App.toast(ed === 'enterprise' ? 'Switched to Enterprise · on-prem' : 'Switched to Standard · cloud'); };
-
-  /* ---------------- connected data sources (drive prompts, descriptions & Tara's context) ----------------
-     A source is "on" if it ships connected in the demo OR the user connected it on the Connectors page.
-     Everything Tara offers to ask is derived from THIS set — never from the edition. */
-  App.connectedSources = () => DB.connectors.filter(c => c.status === 'connected' || (App.conn && App.conn.isConnected(c.id)));
-  App.hasSource = (id) => App.connectedSources().some(c => c.id === id);
-  App._srcLabel = { keka:'HRMS', greythr:'HRMS', jira:'Jira', notion:'Notion', slack:'Slack', gdrive:'Drive', gmail:'Gmail' };
-  // ordered, de-duped source labels (excludes policies — named separately as "your policies")
-  App.sourceLabels = () => { const seen = {}, out = []; App.connectedSources().forEach(c => { if (c.id === 'policyos') return; const l = App._srcLabel[c.id] || c.name; if (!seen[l]) { seen[l] = 1; out.push(l); } }); return out; };
-  App.sourcePhrase = () => { const ls = App.sourceLabels(); return ls.length ? ls.join(', ') + ' and your policies' : 'your policy library'; };
-  App.sourceNouns = () => { const n = []; if (App.hasSource('keka') || App.hasSource('greythr')) n.push('people'); if (App.hasSource('jira')) n.push('work'); if (App.hasSource('notion') || App.hasSource('gdrive')) n.push('docs'); n.push('policies'); return n; };
-  App.sourceNounList = (conj) => { const n = App.sourceNouns(); conj = conj || 'and'; return n.length <= 1 ? (n[0] || 'policies') : n.slice(0, -1).join(', ') + ' ' + conj + ' ' + n[n.length - 1]; };
-  App._srcChip = { keka:{ c:'hrms', ic:'users', l:'HRMS' }, greythr:{ c:'hrms', ic:'users', l:'HRMS' }, jira:{ c:'jira', ic:'branch', l:'Jira' }, notion:{ c:'', ic:'book', l:'Notion' }, slack:{ c:'slack', ic:'chat', l:'Slack' }, policyos:{ c:'policy', ic:'shield', l:'Policies' }, gdrive:{ c:'', ic:'file', l:'Drive' }, gmail:{ c:'', ic:'mail', l:'Gmail' } };
-  App.sourceChips = () => { const seen = {}, out = []; App.connectedSources().forEach(c => { const m = App._srcChip[c.id] || { c:'', ic:'database', l:c.name }; if (seen[m.l]) return; seen[m.l] = 1; out.push(`<span class="src-chip ${m.c}">${App.icon(m.ic)} ${App.esc(m.l)}</span>`); }); return out.join(''); };
-  // example prompts — only for sources Tara can actually answer here (HRMS, Jira, Policies) + role flavour
+  /* ---------------- CONNECTORS PARKED (picked up ~2 months out) — single version, no editions ----------------
+     Tara is policy-centric for now. These stubs keep every call site safe and policy-focused;
+     restore the real source wiring (and editions, if ever) when connectors return. */
+  App.connectedSources = () => [];
+  App.hasSource = () => false;
+  App.sourceLabels = () => [];
+  App.sourcePhrase = () => 'your policy library';
+  App.sourceNouns = () => ['your policies', 'eligibility', 'regulations'];
+  App.sourceNounList = () => 'your policy library';
+  App.sourceChips = () => `<span class="src-chip policy">${App.icon('shield')} Policies</span>`;
+  // example prompts — policy / BFSI focused (+ role flavour)
   App.suggestPrompts = (user) => {
     user = user || App.state.user; const out = [];
-    const keka = App.hasSource('keka') || App.hasSource('greythr'), jira = App.hasSource('jira');
-    if (keka) out.push({ q:"Who's in the Engineering team?", ic:'users', tag:'HRMS' });
-    if (jira) out.push({ q:'Who is working on PolicyOS?', ic:'branch', tag:'Jira' });
     out.push({ q:"What's the leave policy?", ic:'shield', tag:'Policy' });
-    if (keka) out.push({ q:'Is Sankalp in office today?', ic:'clock', tag:'HRMS' });
-    if (jira) out.push({ q:'What is Abhishek Chaudhary working on?', ic:'branch', tag:'Jira' });
-    out.push(user.role === 'user' ? { q:"What's the travel & expense policy?", ic:'briefcase', tag:'Policy' } : { q:'Personal loan eligibility criteria?', ic:'file', tag:'Policy' });
+    if (user.role !== 'user') out.push({ q:'Personal loan eligibility criteria?', ic:'file', tag:'Lending' });
+    out.push({ q:'What if we raise the CIBIL cutoff to 720?', ic:'chart', tag:'Simulate' });
+    out.push({ q:'KYC & AML policy summary', ic:'shield', tag:'Compliance' });
+    out.push(user.role === 'user' ? { q:"What's the travel & expense policy?", ic:'briefcase', tag:'Policy' } : { q:'Two-wheeler LTV rule?', ic:'file', tag:'Lending' });
     return out;
   };
 
@@ -155,13 +145,13 @@ window.App = (function () {
     user = user || App.state.user;
     const q = ' ' + raw.toLowerCase().trim() + ' ';
     const has = (...ws) => ws.some(w => q.includes(w));
+    // connectors PARKED → people / Jira / HRMS branches below stay dormant (kept for easy un-parking)
     const emp = App.empByName(raw);
-    const team = DB.teams.find(t => q.includes(t.name.toLowerCase()) || q.includes(t.name.split(' ')[0].toLowerCase()+' team'));
-    const proj = DB.jiraProjects.find(p => q.includes(p.name.toLowerCase()) || q.includes(p.key.toLowerCase()) || (p.key==='TARA'&&has('policyos','policy os','tara')) || (p.key==='HS'&&has('hypersync','hyper sync')) || (p.key==='HV'&&has('hyperverify','hyper verify')));
-    const hrmsOn = App.hasSource('keka') || App.hasSource('greythr');  // people/teams/presence/comp
-    const jiraOn = App.hasSource('jira');                              // work in progress
+    const team = DB.teams.find(t => q.includes(t.name.toLowerCase()) || q.includes(t.name.split(' ')[0].toLowerCase() + ' team'));
+    const proj = DB.jiraProjects.find(p => q.includes(p.name.toLowerCase()) || q.includes(p.key.toLowerCase()));
+    const hrmsOn = false, jiraOn = false;
 
-    // ---- 0) Impact / what-if simulation (policy-side; works in both editions, RBAC-scoped) ----
+    // ---- Impact / what-if simulation (RBAC-scoped) ----
     const simVerb = has('what if','simulate','impact of','effect of') || (has('raise','lower','increase','decrease','tighten','loosen','set ') && has('cibil','cutoff','foir','ltv','threshold','score','eligib'));
     if (App.sim && simVerb) {
       const order = ['P-PL','P-HL','P-2W','P-MSME'].map(App.policy).filter(pp => pp && App.sim.paramsFor(pp.id) && App.canViewPolicy(pp, user));
@@ -255,14 +245,9 @@ window.App = (function () {
                sources:[{kind:'hrms',label:'Keka HRMS · directory'}] };
     }
 
-    // ---- a connected-source question, but that source isn't connected ----
-    if ((!hrmsOn && (team || emp || has('salary','compensation','in office','present','attendance','people','headcount','colleagues','directory','who is','whos in'))) ||
-        (!jiraOn && has('working on','work on','jira','ticket','issue','sprint'))) {
-      const missing = !hrmsOn ? 'an HRMS (e.g. Keka)' : 'Jira';
-      return { html:`<p>I can't answer that yet — <strong>${missing}</strong> isn't connected in this deployment. An admin can connect it on the <strong>Connectors</strong> page; Tara then answers permission-faithfully from it.</p>`, sources:[{kind:'locked',label:(!hrmsOn?'HRMS':'Jira')+' · not connected'}] };
-    }
+    // (connectors parked — people / Jira / HRMS queries fall through to Policy Q&A / fallback)
 
-    // ---- 5) Policy Q&A (permission-faithful) ----
+    // ---- Policy Q&A (permission-faithful) ----
     const topicMap = [
       {kw:['leave','vacation','holiday','sick','maternity','paternity'], id:'P-LEAVE'},
       {kw:['travel','expense','reimburs','per diem','per-diem'], id:'P-TRAVEL'},
@@ -298,13 +283,12 @@ window.App = (function () {
                sources:[{kind:'policy',label:'PolicyOS repository'}] };
     }
 
-    // ---- fallback (capabilities reflect the connected sources) ----
-    const tips = [];
-    if (hrmsOn) tips.push(`<li><strong>People & teams</strong> — “who's in the Design team?”, “is Sankalp in office?”</li>`);
-    if (jiraOn) tips.push(`<li><strong>Work in progress</strong> — “who's working on PolicyOS?”, “what is Abhishek working on?”</li>`);
-    tips.push(`<li><strong>Policies</strong> — “what's the leave policy?”, “personal loan eligibility?”</li>`);
-    return { html:`<p>I'm <strong>Tara</strong> — your company copilot. I answer only from sources <em>you're</em> permitted to see. Try:</p>
-      <ul>${tips.join('')}</ul>`, sources:[] };
+    // ---- fallback (policy-centric) ----
+    return { html:`<p>I'm <strong>Tara</strong> — your policy copilot. I answer only from the policies <em>you're</em> permitted to see. Try:</p>
+      <ul>
+        <li><strong>Policies</strong> — “what's the leave policy?”, “personal loan eligibility?”, “KYC &amp; AML summary”</li>
+        <li><strong>What-if</strong> — “what if we raise the CIBIL cutoff to 720?”</li>
+      </ul>`, sources:[] };
   };
 
   /* ---------------- chat panel ---------------- */
@@ -370,10 +354,9 @@ window.App = (function () {
     const brain = [];
     if (user.role==='policy_manager'||user.role==='admin'||user.role==='assessment_manager') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
     if (brain.length) groups.push({ title:'Company Brain', items: brain });
-    // Administration + Connectors: ADMIN ONLY. Connectors ship in BOTH editions now.
+    // Administration: ADMIN ONLY. (Connectors parked — picked up ~2 months out.)
     if (user.role==='admin') {
       const admin = [ { id:'usersaccess', label:'Users & access', icon:'users' },
-        { id:'connectors', label:'Connectors', icon:'plug' },
         { id:'category', label:'Categories', icon:'layers' } ];
       groups.push({ title:'Administration', items: admin });
     }
@@ -407,7 +390,7 @@ window.App = (function () {
           </div>
           <div class="sidebar__search" onclick="App.cmd.open()">${App.icon('search')}<span>Search or ask…</span><span class="kbd">⌘K</span></div>
           <nav class="nav" id="navRoot"></nav>
-          <div style="padding:12px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)">${App.icon('lock','')} ${App.edition()==='enterprise'?'On-prem · Enterprise':'Cloud · Standard'} edition</div>
+          <div style="padding:12px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--faint)">${App.icon('lock','')} On-prem · permission-aware</div>
         </aside>
         <div class="main">
           <header class="topbar">
@@ -468,10 +451,6 @@ window.App = (function () {
     m.style.cssText = 'display:block;position:absolute;right:0;top:46px;width:240px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;z-index:50';
     m.innerHTML = `<div style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em">Switch persona (demo)</div>
       ${DB.users.map(p=>{const e2=App.emp(p.id);const active=p.id===App.state.user.id;return `<div class="cmdk__item ${active?'is-active':''}" onclick="App.login('${p.id}')">${App.ui.avatar(e2,'sm')}<div style="flex:1"><div style="font-weight:600;font-size:13px">${App.esc(e2.name)}</div><div style="font-size:11.5px;color:var(--muted)">${App.esc(DB.roleLabels[p.role])}${p.hrAdmin?' · HR':''}</div></div>${active?App.icon('check'):''}</div>`;}).join('')}
-      ${App.state.user.role==='admin' ? `<div class="divider" style="margin:8px 0"></div>
-      <div style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em">Edition</div>
-      <div class="cmdk__item ${App.edition()==='standard'?'is-active':''}" onclick="App.setEdition('standard')">${App.icon('grid')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Standard</div><div style="font-size:11px;color:var(--muted)">Cloud-hosted · managed</div></div>${App.edition()==='standard'?App.icon('check'):''}</div>
-      <div class="cmdk__item ${App.edition()==='enterprise'?'is-active':''}" onclick="App.setEdition('enterprise')">${App.icon('lock')}<div style="flex:1"><div style="font-weight:600;font-size:13px">Enterprise · on-prem</div><div style="font-size:11px;color:var(--muted)">Your infra · data never leaves</div></div>${App.edition()==='enterprise'?App.icon('check'):''}</div>` : ''}
       <div class="divider" style="margin:8px 0"></div>
       <div class="cmdk__item" onclick="App.tour.start()">${App.icon('sparkles')}<span>Take a tour</span></div>
       <div class="cmdk__item" onclick="App.logout()">${App.icon('logout')}<span>Log out</span></div>`;
@@ -597,12 +576,12 @@ window.App = (function () {
   App.stopLoginDemo = () => { App._loginTimers.forEach(clearTimeout); App._loginTimers = []; };
   let _demoIdx = 0;
   const DEMO_FRAMES = [
-    { persona:'Anmol · Policy Manager', q:'Who is working on PolicyOS?',
-      a:`<div class="answer-card"><div class="answer-card__h">${App.icon('branch')} From Jira · TARA</div><div class="answer-card__b"><div class="minirow"><span class="mono" style="font-size:11px;color:var(--muted);width:62px">TARA-101</span><div style="flex:1"><b style="font-weight:600">Revised PolicyOS — RBAC + Tara</b><div class="muted" style="font-size:11.5px">Sankalp Chandra</div></div>${App.ui.statusPill('In Progress')}</div><div class="minirow"><span class="mono" style="font-size:11px;color:var(--muted);width:62px">TARA-104</span><div style="flex:1"><b style="font-weight:600">Permission inheritance engine</b><div class="muted" style="font-size:11.5px">Abhishek Chaudhary</div></div>${App.ui.statusPill('In Progress')}</div></div></div>`,
-      chips:[{k:'jira',l:'Jira'}] },
-    { persona:'Sankalp · Admin', q:"Who's in the Design team?",
-      a:`<div class="answer-card"><div class="answer-card__h">${App.icon('users')} From HRMS · Design</div><div class="answer-card__b"><div class="minirow">${App.ui.avatar('Harshita Gupta','sm')}<div style="flex:1"><b style="font-weight:600">Harshita Gupta</b> <span class="muted" style="font-size:12px">· Product Designer</span></div></div><div class="minirow">${App.ui.avatar('Tanisha','sm')}<div style="flex:1"><b style="font-weight:600">Tanisha</b> <span class="muted" style="font-size:12px">· UI Designer</span></div></div></div></div>`,
-      chips:[{k:'hrms',l:'Keka HRMS'}] },
+    { persona:'Sankalp · Admin', q:'What if we raise the CIBIL cutoff to 720?',
+      a:`<div class="answer-card"><div class="answer-card__h">${App.icon('chart')} Impact simulation · Personal Loan</div><div class="answer-card__b"><div class="minirow"><span class="muted">Approval rate</span><span class="spacer" style="flex:1"></span><b>71.4% → 60.0% (−11.4 pts)</b></div><div class="minirow"><span class="muted">Projected NPA</span><span class="spacer" style="flex:1"></span><b>6.6% → 5.2% (−1.4 pts)</b></div><div class="minirow"><span class="muted">Applicants reclassified</span><span class="spacer" style="flex:1"></span><b>25 of 220</b></div></div></div>`,
+      chips:[{k:'policy',l:'Personal Loan · test cohort'}] },
+    { persona:'Anmol · Policy Manager', q:'Any new RBI circular affecting our policies?',
+      a:`<div class="answer-card"><div class="answer-card__h">${App.icon('alert')} RBI/2026-27/58 · suggested changes</div><div class="answer-card__b"><div class="minirow"><span class="muted">Personal Loan · Min CIBIL</span><span class="spacer" style="flex:1"></span><b><span class="diff-del">700</span> → <span class="diff-add">720</span></b></div><div class="minirow"><span class="muted">Personal Loan · Max FOIR</span><span class="spacer" style="flex:1"></span><b><span class="diff-del">55%</span> → <span class="diff-add">50%</span></b></div></div></div>`,
+      chips:[{k:'policy',l:'Regulatory · RBI/2026-27/58'}] },
     { persona:'Chirag · Staff', q:'Show me the personal loan policy',
       a:`<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">It's scoped to Risk &amp; Policy and the Founder's Office. Permission is enforced at retrieval — not in the prompt.</p>`,
       chips:[{k:'locked',l:'Personal Loan Policy · no access'}] },
@@ -704,13 +683,13 @@ window.App = (function () {
         <div class="landing__hero">
           <div class="landing__copy">
             <span class="landing__eyebrow">${App.icon('lock')} On-prem · permission-aware</span>
-            <h1>Your company,<br>answered — for<br>each person.</h1>
-            <p>One copilot across HRMS, Jira, Notion and your policy library — that only ever answers from what each person is allowed to see. Bring your own model. Your data never leaves.</p>
+            <h1>Your policies,<br>answered — for<br>each person.</h1>
+            <p>The agentic policy copilot for BFSI — ask anything, simulate a change before you make it, and turn a new regulation into reviewed edits. It only ever answers from what each person is allowed to see. Bring your own model; your data never leaves.</p>
             <div class="landing__cta">
               <button class="btn btn--primary" onclick="App.signIn()">Sign in ${App.icon('arrow')}</button>
               <button class="btn" onclick="document.getElementById('lp-how').scrollIntoView({behavior:'smooth'})">See how it works</button>
             </div>
-            <div class="login__chips">${chip('shield','Permission-faithful')}${chip('plug','HRMS · Jira · Notion')}${chip('sparkles','Bring your own LLM')}</div>
+            <div class="login__chips">${chip('shield','Permission-faithful')}${chip('alert','Regulatory change mgmt')}${chip('sparkles','Bring your own LLM')}</div>
           </div>
           <div class="landing__demo">${win('loginDemo', '', 'Ask Tara')}</div>
         </div>
@@ -720,9 +699,9 @@ window.App = (function () {
           <h2 class="lp-h2 reveal">One question. The right source. The right person.</h2>
           <p class="lp-sub reveal">Ask in plain language. Tara routes to the system that has the answer — then filters what comes back to exactly what you're allowed to see. Enforced at retrieval, not in the prompt.</p>
           <div class="lp-features">
-            ${route('users','People &amp; teams','“Who’s in the Design team?”, “is Sankalp in today?” → Keka / greytHR.')}
-            ${route('branch','Work in progress','“Who’s working on PolicyOS?”, “what is Abhishek on?” → Jira.')}
-            ${route('shield','Policies','“Personal-loan eligibility?”, “the leave policy?” → your policy library.')}
+            ${route('shield','Policy Q&amp;A','“Personal-loan eligibility?”, “the leave policy?” → your policy library, permission-faithful, with page citations.')}
+            ${route('chart','What-if simulation','“What if we raise the CIBIL cutoff to 720?” → modelled approval / NPA impact on the test cohort.')}
+            ${route('alert','Regulatory change','Upload a circular → Tara redlines every affected policy → route the changes for approval.')}
           </div>
         </div>
 
@@ -732,25 +711,23 @@ window.App = (function () {
           <div class="lp-kicker reveal">Built for regulated teams</div>
           <h2 class="lp-h2 reveal">Everything Tara does</h2>
           <div class="lp-features">
-            ${feat('shield','Permission-faithful retrieval','Every answer is scoped to the asker. The model never receives a source the user couldn’t open — so it can’t leak what a role can’t see.')}
-            ${feat('sparkles','Bring your own model','Gemini, ChatGPT, Claude, Sarvam, Grok or Perplexity. Your key, your usage, LLM-agnostic — with an optional fallback.')}
-            ${feat('plug','Connect your stack','Keka, greytHR, Jira, Notion, Slack and more — over API or MCP. Each source’s own permissions are inherited.')}
+            ${feat('shield','Permission-faithful retrieval','Every answer is scoped to the asker. The model never receives a policy the user couldn’t open — so it can’t leak what a role can’t see.')}
+            ${feat('alert','Regulatory change management','Upload a circular; Tara checks it against every policy, drafts the redlines with page citations, and routes them for approval.')}
+            ${feat('chart','What-if impact simulation','Model a rule change on the test cohort — approval rate, NPA and reclassification — before you commit it.')}
+            ${feat('database','InsightGen — ask your data','“Top reasons for loan rejection” becomes SQL, runs on your warehouse and comes back as a chart. No analyst, no ticket.')}
             ${feat('branch','Policy lifecycle &amp; approvals','A versioned policy library with maker-checker workflows, audit trails and side-by-side change review.')}
-            ${feat('clipboard','Assessments &amp; attestation','Roll out AI-generated quizzes and attestations so teams actually read what changed.')}
-            ${feat('code','Rules → deployable code','Turn a policy change into business-rules code and cut time-to-market.')}
+            ${feat('sparkles','Bring your own model','Gemini, ChatGPT, Claude, Sarvam, Grok or Perplexity. Your key, your usage, LLM-agnostic — with an optional fallback.')}
           </div>
         </div></div>
 
         ${split(true, 'Insights on tap', 'Ask your data in plain English.', '“Top reasons for loan rejection” becomes SQL, runs on your warehouse and comes back as a chart — no analyst, no ticket. Scoped to what you can see.', 'sceneInsight', 'insight', 'InsightGen')}
-
-        ${split(false, 'Connect in minutes', 'Your stack, your model, on your infra.', 'Plug in Keka, greytHR, Jira and Notion over API or MCP, point Tara at your own model key — and it answers for real, permission-faithfully. Nothing leaves your environment.', 'sceneConnect', 'connect', 'Connectors')}
 
         <div class="lp-section">
           <div class="lp-kicker reveal">Use cases</div>
           <h2 class="lp-h2 reveal">One platform, two ways to sell it.</h2>
           <div class="usecases">
             ${uc('BFSI','Policy governance for lenders','Compliance-grade approval trails, RBAC by product, and regulator-gap checks — the original PolicyOS, now agentic.')}
-            ${uc('Mid-market','A company brain that respects walls','One copilot over HRMS, projects and docs that never tells someone what their role can’t see.')}
+            ${uc('Compliance','From circular to approved change','Upload a new regulation; Tara shows how every policy stands against it and routes the redlines for sign-off.')}
             ${uc('On-prem','Your data never leaves','Self-hosted and bring-your-own-LLM — keys and context stay inside your environment.')}
           </div>
         </div>
@@ -761,7 +738,7 @@ window.App = (function () {
           <div class="row gap-8" style="justify-content:center;margin-top:22px"><button class="btn btn--primary" onclick="App.signIn()">Sign in ${App.icon('arrow')}</button></div>
         </div>
 
-        <div class="landing__foot">Prototype · dummy data · connect your own keys on the Connectors page to make it live</div>
+        <div class="landing__foot">Prototype · dummy data · bring your own model key to make it answer live</div>
       </div>
       <div class="overlay" id="overlay"><div id="modalHost"></div></div>
       <div class="toast-wrap" id="toastWrap"></div>`;

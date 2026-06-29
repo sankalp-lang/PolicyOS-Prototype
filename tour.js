@@ -16,8 +16,8 @@
       const firstCard = { sel: '.content .grid', title: 'Your home', body: 'Quick actions, the numbers that matter, and what needs your attention — all in one place. Ask Tara is your front door for anything ad-hoc.' };
       return [
         { center: true, title: 'Welcome to PolicyOS · Tara', body: 'A 30-second tour of the on-prem, permission-faithful company brain. Skip anytime.' },
-        { sel: '.sidebar .nav', title: 'Role-aware navigation', body: 'The sidebar shows only what your role can use — Connectors and Administration are admin-only.' },
-        { sel: '.chat-launch', title: 'Ask Tara, anywhere', body: 'Ask in plain English. Tara routes to HRMS, Jira, Notion or your policies — and only ever answers from what you’re allowed to see.' },
+        { sel: '.sidebar .nav', title: 'Role-aware navigation', body: 'The sidebar shows only what your role can use — Administration is admin-only.' },
+        { sel: '.chat-launch', title: 'Ask Tara, anywhere', body: 'Ask your policies in plain English — eligibility, a leave rule, a what-if. Tara answers only from what you’re allowed to see, and cites the page.' },
         firstCard,
         { sel: '.sidebar__search', title: 'Jump with ⌘K', body: 'Open the command palette to jump to any page, find a person, or ask Tara from anywhere.' },
         { sel: '.userchip', title: 'See the permission boundary', body: 'Switch persona here. Ask the same question as a staff user vs an admin and watch the answer change — that’s permission-faithful retrieval.' },
@@ -103,7 +103,7 @@
       const cards = role === 'user' ? [['clipboard', 'Take an assessment', 'assessments'], ['chat', 'Ask PolyGPT', 'polygpt']]
         : role === 'risk_approver' ? [['branch', 'Review approvals', 'approvals'], ['chart', 'Open InsightGen', 'insightgen']]
         : role === 'policy_manager' ? [['file', 'Your policies', 'policies'], ['alert', 'Regulatory gaps', 'regulatory']]
-        : [['shield', 'Access control', 'usersaccess'], ['plug', 'Connectors', 'connectors']];
+        : [['alert', 'Regulatory', 'regulatory'], ['shield', 'Users & access', 'usersaccess']];
       return `<div class="tour-next">${cards.map(c => `<button class="tour-nextcard" onclick="App.tour.end();App.navigate('${c[2]}')"><span class="tour-nc-ic">${App.icon(c[0])}</span><span style="flex:1">${c[1]}</span>${App.icon('arrow')}</button>`).join('')}</div>`;
     },
 

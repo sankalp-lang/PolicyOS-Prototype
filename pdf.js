@@ -45,11 +45,20 @@
     return { kind: 'circular', title: c.title, file: c.file || (c.ref.replace(/[^a-z0-9]+/gi, '_') + '.pdf'), pages };
   }
 
+  function amendmentDoc(a) {
+    const pages = [];
+    pages.push({ heading: '1. Background', blocks: [{ type: 'p', text: a.regulator + ' ' + a.ref + ' · ' + a.date }, { type: 'p', text: a.summary }] });
+    const blocks = (a.changes || []).map(ch => ({ type: 'clause', anchor: ch.id, n: ch.clauseRef, text: ch.section + ' — ' + (ch.isNew ? 'shall introduce: ' : 'shall be: ') + ch.suggested + '. ' + ch.rationale }));
+    pages.push({ heading: '2. Directions', blocks: blocks });
+    return { kind: 'amendment', title: a.title, file: a.ref.replace(/[^a-z0-9]+/gi, '_') + '.pdf', pages: pages };
+  }
+
   function build(kind, id) {
     const k = key(kind, id); if (cache[k]) return cache[k];
     let d = null;
     if (kind === 'policy') { const p = App.policy(id); if (p) d = policyDoc(p); }
     else if (kind === 'circular') { const c = findCircular(id); if (c) d = circularDoc(c); }
+    else if (kind === 'amendment') { const a = (DB.amendments || []).find(x => x.id === id); if (a) d = amendmentDoc(a); }
     if (!d) d = { kind: kind, title: 'Document', file: 'document.pdf', pages: [{ heading: 'Document', blocks: [{ type: 'p', text: 'Not available in this deployment.' }] }] };
     cache[k] = d; return d;
   }

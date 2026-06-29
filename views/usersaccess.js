@@ -49,7 +49,7 @@ App.usersAccessView = {
       </tr>`;
     }).join('');
     const prov = DB.employees.filter(e => App.usersAccessView.provisioned(e.id)).length;
-    const src = App.edition() === 'standard' ? 'Synced from <strong>Keka HRMS</strong>.' : 'Manually managed (on-prem edition — no HRMS sync).';
+    const src = 'Roles &amp; access are managed here, by team and category.';
     return `<div class="info-banner">${App.icon('users')} <span><strong>${prov} of ${DB.employees.length}</strong> people are provisioned with a PolicyOS role. ${src} Compensation stays gated to People &amp; Talent and the Founder's Office.</span></div>
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="uaSearch" placeholder="Search people…"/></div>
@@ -77,8 +77,7 @@ App.usersAccessView = {
     m.style.cssText = 'display:block;position:absolute;right:0;top:42px;width:264px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;z-index:50';
     const it = (ic, t, d, fn) => `<div class="cmdk__item" style="align-items:flex-start" onclick="${fn}"><span style="margin-top:2px">${App.icon(ic)}</span><div style="flex:1"><div style="font-weight:600;font-size:13px">${t}</div><div style="font-size:11.5px;color:var(--muted)">${d}</div></div></div>`;
     m.innerHTML = it('user', 'Add individually', 'One person — set role &amp; access', 'App.usersAccessView.addIndividual()')
-      + it('download', 'Import CSV', 'Bulk-add from a spreadsheet', 'App.usersAccessView.addCsv()')
-      + (App.edition() === 'standard' ? it('plug', 'Sync from HRMS', 'Find new joiners in Keka → approve &amp; assign', 'App.usersAccessView.syncHrms()') : '');
+      + it('download', 'Import CSV', 'Bulk-add from a spreadsheet (team, role, category)', 'App.usersAccessView.addCsv()');
     setTimeout(() => document.addEventListener('click', function h() { const mm = document.getElementById('uaAddMenu'); if (mm) mm.style.display = 'none'; document.removeEventListener('click', h); }), 0);
   },
   _featRows() {
@@ -138,18 +137,13 @@ App.usersAccessView = {
   /* ---------- Access rules tab (sources + policy matrix + tester) ---------- */
   accessHtml() {
     const sourceCard = c => `<div class="card card--pad"><div class="row gap-8" style="margin-bottom:6px">${App.icon(c.id === 'keka' || c.id === 'greythr' ? 'users' : c.id === 'jira' ? 'branch' : c.id === 'notion' ? 'book' : c.id === 'slack' ? 'chat' : 'shield')}<b style="font-size:13.5px">${App.esc(c.name)}</b></div><div class="muted" style="font-size:12.5px">${App.esc(c.note)}</div><div class="row gap-6 mt-8"><span class="pill pill--gray">${App.icon('key')} ${App.esc(c.auth)}</span></div></div>`;
-    const conns = DB.connectors.filter(c => c.status === 'connected' && (App.edition() === 'standard' || c.id === 'policyos'));
     const pols = DB.policies.filter(p => App.catEnabled(p.category));
     const polRows = pols.map(p => {
       const scope = p.access.everyone ? '<span class="pill pill--green">Everyone</span>'
         : [].concat((p.access.roles || []).map(r => `<span class="tag">${DB.roleLabels[r] || r}</span>`)).concat((p.access.teams || []).map(t => `<span class="tag">${App.esc(t)}</span>`)).join(' ');
       return `<tr><td><div class="cell-strong">${App.esc(p.name)}${p.sensitive ? ' ' + App.ui.pill('Confidential', 'red') : ''}</div><div class="muted" style="font-size:12px">${App.esc(p.category)} · ${p.version}</div></td><td><div class="row wrap gap-6">${scope}</div></td><td><button class="btn btn--sm" onclick="App.accessView.edit('${p.id}')">${App.icon('edit')} Edit</button></td></tr>`;
     }).join('');
-    const srcBlock = App.edition() === 'standard'
-      ? `<h3 style="margin:6px 0 12px;font-size:15px">Connected sources</h3><div class="grid grid-3" style="margin-bottom:24px">${conns.map(sourceCard).join('')}</div>`
-      : `<div class="info-banner">${App.icon('lock')} <span><strong>On-prem edition:</strong> no external connectors. Access is scoped entirely within the policy library below.</span></div>`;
-    return `<div class="info-banner">${App.icon('shield')} <span><strong>How access is derived:</strong> ${App.edition() === 'standard' ? "each connected source's own permissions are inherited automatically; the rules below are overrides &amp; scoping on top." : 'role- and team-based rules below.'} Tara enforces them at retrieval — it never returns a source the user couldn't open.</span></div>
-      ${srcBlock}
+    return `<div class="info-banner">${App.icon('shield')} <span><strong>How access is derived:</strong> role- and team-based rules over the policy library, scoped by category. Tara enforces them at retrieval — it never returns a policy the user couldn't open.</span></div>
       <h3 style="margin:6px 0 12px;font-size:15px">Policy access rules</h3>
       <div class="table-wrap" style="margin-bottom:24px"><table class="tbl"><thead><tr><th>Policy</th><th>Who can access</th><th></th></tr></thead><tbody>${polRows}</tbody></table></div>
       <div class="card"><div class="card__head">${App.icon('eye')}<h3>Access tester</h3><div class="spacer"></div><span class="muted" style="font-size:12px">Preview what a persona can retrieve</span></div>

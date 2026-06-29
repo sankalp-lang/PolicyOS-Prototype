@@ -42,7 +42,7 @@ var loadErrors = [];
 ['data.js','core.js','llm.js','sim.js','pdf.js','tour.js'].forEach(function(f){ var e=load(f); if(e) loadErrors.push('LOAD '+e); });
 
 var viewFiles = ['dashboard','copilot','policies','directory','access','usersaccess','polygpt','rulesense',
-  'approvals','regulatory','usermgmt','category','bredecoder','insightgen','assessments','connectors'];
+  'approvals','regulatory','usermgmt','category','bredecoder','insightgen','assessments'];  /* connectors PARKED */
 viewFiles.forEach(function(v){ var e=load('views/'+v+'.js'); if(e) loadErrors.push('LOAD '+e); });
 
 if (loadErrors.length) { print('LOAD ERRORS:\n' + loadErrors.join('\n')); throw 'stop'; }
@@ -86,25 +86,21 @@ var admin = personas.find(function(p){return p.id==='THQ0144';});   // Sankalp /
 var staff = personas.find(function(p){return p.id==='THQ0125';});   // Chirag / staff user
 var hr    = personas.find(function(p){return p.id==='THQ0145';});   // Putul / HR admin
 function locked(r){ return /don.t have access|no access|cannot access|hidden|restricted/i.test(r.html) || (r.sources||[]).some(function(s){return s.kind==='locked';}); }
+// Policy-based permission moat (connectors/HRMS/Jira routing parked → policy-centric)
 var a1=App.askTara('personal loan eligibility criteria', staff); chk(locked(a1), 'RBAC: staff must be DENIED the personal loan policy');
-var a2=App.askTara("what's anmol's salary", staff);             chk(locked(a2), 'RBAC: staff must be DENIED salary data');
 var a3=App.askTara('personal loan eligibility criteria', admin); chk(/700|cibil/i.test(a3.html), 'RBAC: admin must SEE personal loan facts');
-var a4=App.askTara("what's anmol's salary", hr);                 chk(/₹|ctc|band/i.test(a4.html), 'RBAC: HR must SEE salary');
-var a5=App.askTara("who's in the engineering team", staff);      chk((a5.sources||[]).some(function(s){return s.kind==='hrms';}), 'Routing: people query -> HRMS source');
-var a6=App.askTara('who is working on policyos', staff);          chk((a6.sources||[]).some(function(s){return s.kind==='jira';}), 'Routing: work query -> Jira source');
 var a7=App.askTara("what's the leave policy", staff);            chk(/leave|privilege|18/i.test(a7.html) && !locked(a7), 'RBAC: staff CAN see everyone-policy (leave)');
 
-// LLM real-model path: the CONTEXT handed to the model is itself permission-filtered
+// LLM real-model path: the CONTEXT handed to the model is itself permission-filtered (policies-only now)
 var ctxAdmin = App.llm.buildContext(admin), ctxStaff = App.llm.buildContext(staff);
 chk(/Personal Loan Credit Policy/.test(ctxAdmin), 'LLM context: admin context INCLUDES the personal-loan policy');
 chk(!/Personal Loan Credit Policy/.test(ctxStaff), 'LLM context: staff context EXCLUDES the personal-loan policy (moat is real)');
-chk(/compensation:/i.test(ctxAdmin), 'LLM context: admin context INCLUDES compensation');
-chk(!/compensation:/i.test(ctxStaff), 'LLM context: staff context EXCLUDES compensation');
+chk(!/WORK IN PROGRESS|## PEOPLE/.test(ctxAdmin), 'LLM context: people/Jira parked (policies-only context)');
 var P = App.llm.PROVIDERS;
 chk(P.gemini.models.length===3 && P.openai.models.length===2 && P.anthropic.models.length===3 && P.sarvam.models.length===1 && P.grok.models.length===1 && P.perplexity.models.length===1,
   'LLM catalog: 3 Gemini / 2 ChatGPT / 3 Claude / 1 Sarvam / 1 Grok / 1 Perplexity');
 chk(App.llm.configured() === false, 'LLM: nothing connected by default (no Claude default)');
-chk(typeof App.conn.openSetup === 'function' && DB.connectors.some(c=>c.id==='greythr') && DB.connectors.some(c=>c.id==='keka'), 'Connectors: greytHR + Keka present and connectable');
+chk(DB.connectors && DB.connectors.length >= 5, 'Connector data retained (parked) for later');
 chk(typeof App.signIn==='function' && typeof App.doSignIn==='function' && typeof App.signFill==='function', 'Sign-in flow handlers present');
 var bootErr=null; try { App.boot(); } catch(e){ bootErr=e; } chk(!bootErr, 'Landing (multi-section) renders without throwing: '+(bootErr||''));
 var nm = App.navModel(admin);
@@ -124,32 +120,24 @@ chk(!/privilege leave|18 \/ yr/i.test(leaveAns.html), 'Category disable: Tara no
 hrCat.enabled = true;
 chk(App.visiblePolicies(admin).some(function(p){return p.id==='P-LEAVE';}), 'Category re-enable: HR leave policy returns');
 
-// Source availability is driven by CONNECTED CONNECTORS, not the edition
-chk(App.hasSource('keka') && App.hasSource('jira'), 'Sources: Keka HRMS + Jira ship connected by default');
-// Connectors now ship in BOTH editions (no longer hidden in enterprise)
-try { localStorage.setItem('tara_edition','enterprise'); } catch(e){}
-chk(App.navModel(admin).groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Enterprise: Connectors present in nav (connectors now in both editions)');
-try { localStorage.setItem('tara_edition','standard'); } catch(e){}
-// With HRMS + Jira connected, people/work questions answer from those sources (either edition)
-var pplOn = App.askTara('who is in office today', admin);
-chk((pplOn.sources||[]).some(function(s){return s.kind==='hrms';}), 'Connected: people query answered from HRMS');
-var workOn = App.askTara('who is working on policyos', admin);
-chk((workOn.sources||[]).some(function(s){return s.kind==='jira';}), 'Connected: work query answered from Jira');
-chk(/WORK IN PROGRESS/.test(App.llm.buildContext(admin)), 'Connected: LLM context includes Jira');
-// Disconnect HRMS + Jira → those questions are no longer answerable; policies still work
-var _keka = DB.connectors.find(function(c){return c.id==='keka';}), _jira = DB.connectors.find(function(c){return c.id==='jira';});
-var _ks = _keka.status, _js = _jira.status; _keka.status='available'; _jira.status='available';
-chk(!App.hasSource('keka') && !App.hasSource('jira'), 'Disconnect: Keka + Jira no longer report as connected');
-var offPeople = App.askTara('who is in office today', admin);
-chk(!(offPeople.sources||[]).some(function(s){return s.kind==='hrms';}), 'Disconnected: people query NOT answered from HRMS');
-var offCtx = App.llm.buildContext(admin);
-chk(!/WORK IN PROGRESS/.test(offCtx) && /POLICIES/.test(offCtx), 'Disconnected: LLM context drops Jira, keeps policies');
-chk(/leave/i.test(App.askTara("what's the leave policy", admin).html), 'Disconnected: policy query still works');
-_keka.status=_ks; _jira.status=_js; // restore connected state
-
-// Prompts/descriptions derive from connected sources
-chk(/HRMS/.test(App.sourcePhrase()) && /Jira/.test(App.sourcePhrase()) && /policies/.test(App.sourcePhrase()), 'Prompts: sourcePhrase names connected sources + policies');
-chk(App.suggestPrompts(admin).some(function(p){return p.tag==='Jira';}) && App.suggestPrompts(admin).some(function(p){return p.tag==='Policy';}), 'Prompts: suggestions span connected sources');
+// CONNECTORS PARKED — Tara is policy-centric; single version (no editions)
+chk(App.hasSource('keka') === false && App.hasSource('jira') === false, 'Parked: no source is "connected" (App.hasSource always false)');
+chk(typeof App.edition === 'undefined' && typeof App.setEdition === 'undefined', 'Editions removed — single version');
+chk(!App.views['connectors'], 'Parked: connectors view not registered');
+chk(!App.navModel(admin).groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Parked: Connectors not in admin nav');
+// askTara is policy-centric: people / Jira questions fall through (no HRMS/Jira source surfaced)
+var pplQ = App.askTara('who is in office today', admin);
+chk(!(pplQ.sources||[]).some(function(s){return s.kind==='hrms';}), 'Policy-centric: people query does NOT surface an HRMS source');
+var workQ = App.askTara('who is working on policyos', admin);
+chk(!(workQ.sources||[]).some(function(s){return s.kind==='jira';}), 'Policy-centric: work query does NOT surface a Jira source');
+chk(/leave|18 \/ yr/i.test(App.askTara("what's the leave policy", admin).html), 'Policy Q&A still works');
+chk(/720|cibil/i.test(App.askTara('what if we raise the CIBIL cutoff to 720?', admin).html), 'What-if simulation still works');
+// LLM context is policies-only (people / Jira parked)
+var ctx = App.llm.buildContext(admin);
+chk(!/WORK IN PROGRESS/.test(ctx) && /POLICIES/.test(ctx), 'LLM context: policies-only (people/Jira parked)');
+// suggested prompts are policy / BFSI focused (no HRMS/Jira)
+var sp = App.suggestPrompts(admin);
+chk(sp.some(function(p){return p.tag==='Policy';}) && !sp.some(function(p){return p.tag==='HRMS' || p.tag==='Jira';}), 'Prompts: policy/BFSI focused (no HRMS/Jira)');
 
 // Model config: selecting a model persists & shows even without a key (demo); a key makes it live
 try { localStorage.setItem('tara_llm_cfg', JSON.stringify({primary:{provider:'anthropic',model:'claude-opus-4-8',key:''}})); } catch(e){}
@@ -160,12 +148,11 @@ chk(App.llm.configured()===true && /Claude Opus 4\.8/.test(App.llm.statusLabel()
 try { localStorage.setItem('tara_llm_cfg','{}'); } catch(e){}
 chk(/Demo mode/.test(App.llm.statusLabel()), 'Model: no selection falls back to Demo mode');
 
-// Nav: admin-only Administration + Connectors; PM excluded
+// Nav: admin-only Administration (Users & access + Categories); connectors parked; PM excluded
 var navAdmin = App.navModel(admin), navPM = App.navModel(personas.find(function(p){return p.id==='THQ0101';}));
 chk(navAdmin.groups.some(function(g){return g.title==='Administration' && g.items.some(function(i){return i.id==='usersaccess';});}), 'Admin sees "Users & access" under Administration');
-chk(navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Admin sees Connectors');
+chk(!navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Connectors parked — not in admin nav');
 chk(!navPM.groups.some(function(g){return g.title==='Administration';}), 'Policy Manager does NOT see Administration');
-chk(!navPM.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Policy Manager does NOT see Connectors');
 chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='assessments';});}), 'Assessments lives under Company Brain');
 chk(!navAdmin.groups.some(function(g){return g.items.some(function(i){return ['directory','access','usermgmt'].indexOf(i.id)>=0;});}), 'Old directory/access/usermgmt removed from nav');
 
@@ -184,7 +171,7 @@ chk(typeof App.simView === 'object' && typeof App.simView.open === 'function' &&
 chk(!!DB.circulars && DB.circulars.length >= 3, 'Regulatory: circular feed present');
 chk(DB.categories.find(function(c){return c.name==='Compliance';}).subs.indexOf('Regulatory Updates') >= 0, 'Regulatory: Compliance has the "Regulatory Updates" sub-category');
 chk(App.navModel(admin).groups.some(function(g){return g.items.some(function(i){return i.id==='regulatory';});}), 'Regulatory: nav item present under Policy Management');
-chk(typeof App.regulatoryView === 'object' && typeof App.regulatoryView.createChange === 'function', 'Regulatory: view + createChange present');
+chk(typeof App.regulatoryView === 'object' && typeof App.regulatoryView.openEditor === 'function', 'Regulatory: view + redline editor present');
 
 // ---- Document viewer (App.pdf) + page citations ----
 chk(typeof App.pdf === 'object' && typeof App.pdf.cite === 'function' && typeof App.pdf.build === 'function', 'PDF: App.pdf viewer engine present');
@@ -195,36 +182,39 @@ chk(/p\.2/.test(App.pdf.cite('policy','P-PL','Minimum CIBIL score')) && /class="
 var _cdoc = App.pdf.build('circular','INC-RBI-58');
 chk(_cdoc && _cdoc.pages.length >= 6, 'PDF: circular builds pages from clauses');
 
-// ---- Manual circular ingest → multi-policy gap analysis → Approvals ----
-chk(DB.incomingCirculars && DB.incomingCirculars.length >= 1, 'Regulatory: uploadable (incoming) circulars present');
-var _inc = DB.incomingCirculars.find(function(c){return c.id==='INC-RBI-58';});
-chk(_inc && _inc.clauses.some(function(cl){return (cl.impact||[]).some(function(i){return i.policyId==='P-PL';});}), 'Regulatory: incoming clause maps to an existing policy');
-App.regulatoryView._analyze('INC-RBI-58');
-var _as = App.regulatoryView.assessment;
-chk(_as && _as.suggestions.length >= 5, 'Regulatory: analysis produces per-clause suggestions');
-chk(_as.suggestions.some(function(s){return s.impact && s.impact.approvalDelta!=null;}), 'Regulatory: lending suggestions carry a simulated impact');
-var _affected = {}; _as.suggestions.filter(function(s){return s.status!=='nogap';}).forEach(function(s){_affected[s.imp.policyId]=1;});
-chk(Object.keys(_affected).length >= 2, 'Regulatory: one circular affects multiple policies');
-var _before = DB.approvals.length;
-var _pending = _as.suggestions.filter(function(s){return s.status==='pending';}).slice(0,2).map(function(s){return s.key;});
-try { App.regulatoryView.sendForApproval(_pending); } catch(e){}
-chk(DB.approvals.length === _before + _pending.length, 'Regulatory: send-for-approval pushes requests into Approvals');
-chk(DB.approvals[0].type==='Regulatory Change' && DB.approvals[0].citations && DB.approvals[0].citations.length===2 && !!DB.approvals[0].sourceRef, 'Regulatory: approval carries policy+circular citations and source ref');
-chk(_as.suggestions.filter(function(s){return s.key===_pending[0];})[0].status==='queued', 'Regulatory: sent suggestion marked queued');
-// re-entry must NOT reset state nor allow duplicate sends (cached assessment)
-App.regulatoryView.assessment = null;       // "Back to circulars"
-App.regulatoryView._analyze('INC-RBI-58');  // re-open via the uploaded strip
-chk(App.regulatoryView.assessment === _as, 'Regulatory: re-opening reuses the cached assessment');
-chk(App.regulatoryView.assessment.suggestions.filter(function(s){return s.key===_pending[0];})[0].status==='queued', 'Regulatory: queued state survives re-entry');
-var _before2 = DB.approvals.length;
-try { App.regulatoryView.sendForApproval(_pending); } catch(e){}
-chk(DB.approvals.length === _before2, 'Regulatory: re-sending queued suggestions adds no duplicate approvals');
-App.regulatoryView._analyze('INC-SEBI-19');
-chk(App.regulatoryView.assessment.suggestions.some(function(s){return s.status==='nogap';}), 'Regulatory: no-gap clauses flagged as no change');
-App.regulatoryView.assessment = null; App.regulatoryView._uploaded = []; App.regulatoryView._assessments = {};
-var beforeN = DB.approvals.length; App.state.user = admin;
-App.regulatoryView.createChange('CIR-36');
-chk(DB.approvals.length === beforeN + 1 && /RBI/.test(DB.approvals[0].complianceFlag||'') && !!DB.approvals[0].impact, 'Regulatory: createChange raises an Approval with citation + projected impact');
+// ---- Regulatory: amendments → TWO-PDF editor (approve/reject/comment → DOWNLOAD, not Approvals) ----
+chk(DB.amendments && DB.amendments.length >= 3, 'Regulatory: amendment releases present');
+var _amd58 = DB.amendments.find(function(a){return a.id==='AMD-58';});
+var _pols58 = {}; _amd58.changes.forEach(function(c){_pols58[c.policyId]=1;});
+chk(Object.keys(_pols58).length >= 3, 'Regulatory: one amendment (AMD-58) affects multiple policies');
+var _plChanges = App.regulatoryView._changesForPolicy('P-PL');
+var _plAmds = {}; _plChanges.forEach(function(c){_plAmds[c.amendment.id]=1;});
+chk(_plChanges.length >= 3 && Object.keys(_plAmds).length >= 2, 'Regulatory: one policy (P-PL) collects changes from multiple amendments');
+chk(typeof App.regulatoryView.openEditor==='function' && typeof App.regulatoryView._downloadPdf==='function' && typeof App.regulatoryView._downloadWord==='function' && typeof App.regulatoryView._sendApproval==='function', 'Regulatory: editor + PDF/Word download + send-for-approval all present');
+chk(App.pdf.build('amendment','AMD-58').pages.length >= 2, 'PDF: amendment renders as a circular-style PDF (left pane)');
+App.regulatoryView.openEditor('P-PL');
+var _ed=null; try { _ed = App.regulatoryView._renderEditor(); } catch(e){ _ed = 'ERR '+e; }
+chk(typeof _ed==='string' && /contenteditable/.test(_ed) && _ed.indexOf('Send for approval') >= 0 && _ed.indexOf('Download PDF') >= 0, 'Regulatory: two-PDF editor renders (editable + PDF/Word + send): '+String(_ed).slice(0,40));
+var _c = _plChanges.slice(0,3).map(function(c){return c.id;});
+App.regulatoryView._accept(_c[0]);                                   // approve AI suggestion
+App.regulatoryView._setSuggest(_c[1],'48%'); App.regulatoryView._applySuggestion(_c[1]);  // reviewer's own wording in the PDF
+App.regulatoryView._reject(_c[2]);
+chk(App.regulatoryView.st(_c[0]).status==='accepted' && App.regulatoryView.st(_c[1]).status==='suggested' && App.regulatoryView.st(_c[2]).status==='rejected', 'Regulatory: approve / suggest-wording / reject states');
+App.regulatoryView.st(_c[0]).comment = 'reviewed by compliance';
+var _doc = App.regulatoryView._revisedDocHtml(App.policy('P-PL'));
+chk(_doc.indexOf(_plChanges[0].suggested) >= 0 && _doc.indexOf('48%') >= 0, 'Regulatory: revised doc applies approved value AND reviewer suggestion');
+chk(/reviewed by compliance/.test(_doc), 'Regulatory: reviewer comment included in the revised doc');
+// downloads (PDF + Word) do NOT route to Approvals
+var _apprBefore = DB.approvals.length;
+try { App.regulatoryView._downloadWord(); } catch(e){}
+try { App.regulatoryView._downloadPdf(); } catch(e){}
+chk(DB.approvals.length === _apprBefore, 'Regulatory: PDF/Word download does NOT route to Approvals (sign offline)');
+// Send for approval DOES route approved + suggested changes
+App.regulatoryView._sendApproval();
+chk(DB.approvals.length === _apprBefore + 2, 'Regulatory: Send-for-approval routes approved + suggested changes to Approvals');
+chk(!!DB.approvals[0].sourceRef && /48%|720/.test(String(DB.approvals[0].change.to)), 'Regulatory: approval carries source ref + reviewer value');
+chk(App.regulatoryView._audit.length > 0, 'Regulatory: audit log records the review actions');
+App.regulatoryView.editor = null; App.regulatoryView._st = {}; App.regulatoryView._audit = [];
 
 // Tara what-if hook routes to the simulator (RBAC-scoped)
 var simAns = App.askTara('what if we raise the personal loan cibil cutoff to 760', admin);

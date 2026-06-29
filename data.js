@@ -360,7 +360,43 @@ window.DB = (function () {
       ] }
   ];
 
+  /* ---------- Regulatory amendments (new releases from authorities → suggested policy changes) ----------
+     One amendment can touch MANY policies; one policy can collect changes from MANY amendments.
+     Each change targets a policy 'section' (a fact key, or isNew for an added clause). ---------- */
+  const amendments = [
+    { id:'AMD-58', regulator:'RBI', ref:'RBI/2026-27/58', title:'Master Direction – Responsible Lending Conduct', date:'18 Jun 2026', status:'New',
+      summary:'Tightens unsecured-retail underwriting and secured-retail LTV discipline; adds an MSME credit-decision turnaround.',
+      changes:[
+        { id:'CH-58-1', policyId:'P-PL', clauseRef:'¶2.3', section:'Minimum CIBIL score', current:'700', suggested:'720',
+          rationale:'Clause ¶2.3 sets a hard 720 floor for unsecured personal credit; the policy floor of 700 is below the mandate.', sim:{ minCibil:720 } },
+        { id:'CH-58-2', policyId:'P-PL', clauseRef:'¶3.1', section:'Max FOIR', current:'55%', suggested:'50%',
+          rationale:'Clause ¶3.1 caps FOIR at 50% at origination; the policy permits 55%.', sim:{ maxFoir:0.50 } },
+        { id:'CH-58-3', policyId:'P-2W', clauseRef:'¶5.4', section:'Max LTV', current:'90%', suggested:'85%',
+          rationale:'Clause ¶5.4 caps two-wheeler LTV at 85% of on-road value.', sim:{ maxLtv:0.85 } },
+        { id:'CH-58-4', policyId:'P-MSME', clauseRef:'¶6.1', section:'Credit-decision turnaround', current:'No TAT defined', suggested:'14-day decision TAT', isNew:true,
+          rationale:'Clause ¶6.1 requires a documented credit decision within 14 calendar days.' }
+      ] },
+    { id:'AMD-39', regulator:'RBI', ref:'RBI/2026-27/39', title:'Digital Lending – Cooling-off Period', date:'21 May 2026', status:'New',
+      summary:'Mandates a 3-day borrower cooling-off window on every digital loan.',
+      changes:[
+        { id:'CH-39-1', policyId:'P-PL', clauseRef:'¶4.2', section:'Cooling-off period', current:'No cooling-off clause', suggested:'Add 3-day cooling-off (no-penalty exit)', isNew:true,
+          rationale:'Clause ¶4.2 mandates a 3-day cooling-off window; the Personal Loan policy is currently silent on it.' }
+      ] },
+    { id:'AMD-41', regulator:'RBI', ref:'RBI/2026-27/41', title:'Periodic KYC – Revised Timelines', date:'02 Jun 2026', status:'New',
+      summary:'High-risk customers must undergo periodic KYC updation at least once every 12 months.',
+      changes:[
+        { id:'CH-41-1', policyId:'P-KYC', clauseRef:'¶6.5', section:'Re-KYC', current:'High-risk: 2 yrs', suggested:'High-risk: 1 yr',
+          rationale:'Shortens the high-risk re-KYC cycle from 24 to 12 months.' }
+      ] },
+    { id:'AMD-S19', regulator:'SEBI', ref:'SEBI/HO/2026/19', title:'Cyber Resilience & Vendor Access Controls', date:'12 Jun 2026', status:'New',
+      summary:'Strengthens periodic access reviews for outsourced vendors of regulated entities.',
+      changes:[
+        { id:'CH-S19-1', policyId:'P-ISEC', clauseRef:'¶2.1', section:'Vendor access review', current:'Annual', suggested:'Semi-annual', isNew:true,
+          rationale:'Clause ¶2.1 requires vendor access to be reviewed at least semi-annually.' }
+      ] }
+  ];
+
   return { employees, compensation, teams, jiraProjects, jiraIssues, categories, policies,
            users, roleLabels, workflows, approvals, assessments, insights, rejectionReasons,
-           connectors, company, simParams, testBase, circulars, incomingCirculars };
+           connectors, company, simParams, testBase, circulars, incomingCirculars, amendments };
 })();

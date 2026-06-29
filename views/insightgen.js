@@ -230,7 +230,7 @@ App.insightgenView = {
     const chart = `<div style="padding:4px 0">${data.map(d => `<div class="bar-row"><div class="bar-row__lbl">${App.esc(d.reason)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(8, 100 * d.count / max).toFixed(0)}%">${fmt(d.count)}</div></div><div class="bar-row__val">${fmt(d.count)}</div></div>`).join('')}</div>`;
     const answer = `<p><strong>Thane</strong> converts logins to disbursals at just <strong>10.6%</strong>, well below the <strong>18%</strong> network average.</p>
       <p>Andheri (22.1%) and Pune Camp (19.8%) lead the network — worth comparing their underwriting turnaround against Thane's.</p>`;
-    return { sql, result, chart, answer, followup: 'Who is working on PolicyOS?' };
+    return { sql, result, chart, answer, followup: 'What is the collections and recovery policy?' };
   },
 
   _genericAnswer(q) {

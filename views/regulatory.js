@@ -1,30 +1,25 @@
-/* Regulatory — two paths into the same place (Approvals):
-   1) AUTO feed  — circulars Tara already watches (DB.circulars), single-policy gap → change request.
-   2) MANUAL upload — a compliance owner uploads any circular PDF (DB.incomingCirculars); Tara checks it
-      against the WHOLE policy library, proposes a redline per affected clause (with page citations),
-      and the reviewer accepts each (or in bulk) → Approvals.
-   Tracked under Compliance › Regulatory Updates. */
+/* Regulatory — new releases from authorities → suggested policy changes, reviewed in a TWO-PDF editor.
+   Left: the regulator's circular (PDF) with the driving clause highlighted.
+   Right: the firm's policy as an EDITABLE PDF — the changed line is highlighted; Approve applies the suggested
+   text in place, Reject keeps current; per-change comments. The output is NOT an in-app approval — the reviewer
+   DOWNLOADS the revised policy PDF to sign and run through their own approval workflow.
+   One release can touch many policies; one policy can collect changes from many releases. */
 App.registerView('regulatory', {
   title: 'Regulatory',
   render(ctx) {
-    const RV = App.regulatoryView;
-    if (RV._analyzing) return RV._renderAnalyzing();
-    if (RV.assessment) return RV._renderAssessment();
-    return RV._renderList(ctx);
+    return App.regulatoryView.editor ? App.regulatoryView._renderEditor() : App.regulatoryView._renderList(ctx);
   },
   mount(root) {
+    if (App.regulatoryView.editor) { App.regulatoryView._mountEditor(); return; }
     const s = root.querySelector('#regSearch');
-    if (s) s.oninput = () => { const q = (s.value || '').toLowerCase(); root.querySelectorAll('#regBody tr').forEach(tr => { tr.style.display = tr.dataset.n.includes(q) ? '' : 'none'; }); };
+    if (s) s.oninput = () => { const q = (s.value || '').toLowerCase(); root.querySelectorAll('#regRelRow').forEach(r => { r.style.display = r.dataset.n.includes(q) ? '' : 'none'; }); };
   }
 });
 
 App.regulatoryView = {
-  assessment: null,
-  _analyzing: null,
-  _uploaded: [],
-  _draftUpload: null,
-  _assessments: {},   // cache per circular id — preserves queued/dismissed/edits across re-entry
-  _reviewCtx: null,
+  editor: null,        // { policyId, idx }
+  _st: {},             // per-change state: { status:'pending'|'accepted'|'rejected'|'suggested', comment, suggestText, cmtOpen, sent }
+  _audit: [],          // module audit trail (most-recent first)
 
   _refresh() {
     const root = document.getElementById('viewRoot'); if (!root) return;
@@ -33,344 +28,283 @@ App.regulatoryView = {
   },
   _canEdit() { const r = App.currentUser().role; return r === 'admin' || r === 'policy_manager' || r === 'risk_approver'; },
 
-  /* ---------------- list (auto feed + uploaded) ---------------- */
+  /* ---------------- aggregation ---------------- */
+  _allChanges() {
+    const out = [];
+    (DB.amendments || []).forEach(a => (a.changes || []).forEach(ch => out.push(Object.assign({}, ch, { amendment: a }))));
+    return out;
+  },
+  _changesForPolicy(pid) { return this._allChanges().filter(c => c.policyId === pid); },
+  _affectedPolicies() { const seen = {}, out = []; this._allChanges().forEach(c => { if (!seen[c.policyId]) { seen[c.policyId] = 1; out.push(c.policyId); } }); return out; },
+  _amendmentsForPolicy(pid) { const seen = {}, out = []; this._changesForPolicy(pid).forEach(c => { if (!seen[c.amendment.id]) { seen[c.amendment.id] = 1; out.push(c.amendment); } }); return out; },
+  st(id) { if (!this._st[id]) this._st[id] = { status: 'pending', comment: '', suggestText: '', cmtOpen: false, sent: false }; return this._st[id]; },
+  _log(action, detail) { const u = App.currentUser(); let ts = ''; try { ts = new Date().toLocaleString(); } catch (e) {} this._audit.unshift({ t: ts, user: u ? u.name : '—', role: u ? (DB.roleLabels[u.role] || u.role) : '', action: action, detail: detail || '' }); },
+  _auditModal() {
+    const rows = this._audit.map(e => `<tr><td class="muted" style="font-size:11.5px;white-space:nowrap">${App.esc(e.t)}</td><td><b style="font-weight:600">${App.esc(e.user)}</b> <span class="muted" style="font-size:11px">${App.esc(e.role)}</span></td><td>${App.esc(e.action)}</td><td class="muted" style="font-size:12.5px">${App.esc(e.detail)}</td></tr>`).join('');
+    App.openModal({ title: 'Regulatory — audit log', sub: 'Every review action, time-stamped.', lg: true,
+      body: this._audit.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>` : App.ui.empty('clipboard', 'No activity yet', 'Review actions (approve, reject, suggest, download, send) will appear here.'),
+      footer: `<button class="btn" onclick="App.closeModal()">Close</button>` });
+  },
+
+  /* ---------------- list view ---------------- */
   _renderList(ctx) {
-    const rows = DB.circulars.map(c => {
-      const p = App.policy(c.affects);
-      const status = c.status === 'Actioned' ? App.ui.pill('Actioned', 'green', true)
-        : c.suggestion ? App.ui.pill('Gap found', 'amber', true)
-        : App.ui.pill('No gap', 'green', true);
-      return `<tr class="clickable" data-n="${App.esc((c.title + ' ' + c.ref + ' ' + c.regulator).toLowerCase())}" onclick="App.regulatoryView.open('${c.id}')">
-        <td><div class="cell-person">${App.icon('alert')}<div><div class="cell-strong">${App.esc(c.title)}</div><div class="muted" style="font-size:12px">${App.esc(c.regulator)} · ${App.esc(c.ref)}</div></div></div></td>
-        <td class="muted">${c.date}</td>
-        <td>${p ? App.ui.pill(p.name, 'violet') : App.ui.pill('—', 'gray')}</td>
-        <td>${status}</td>
-        <td><button class="btn btn--sm" onclick="event.stopPropagation();App.regulatoryView.open('${c.id}')">${App.icon('eye')} Review</button></td>
-      </tr>`;
-    }).join('');
-    const gaps = DB.circulars.filter(c => c.suggestion && c.status !== 'Actioned').length;
+    const all = this._allChanges();
+    const affected = this._affectedPolicies();
+    const resolved = all.filter(c => this.st(c.id).status !== 'pending').length;
+    const stat = (n, label, ic) => `<div class="reg-stat"><div class="reg-stat__ic">${App.icon(ic)}</div><div><div class="reg-stat__n">${n}</div><div class="reg-stat__l">${label}</div></div></div>`;
 
-    // uploaded circulars (manual ingest) — quick re-entry into their assessment
-    const uploaded = this._uploaded.map(id => (DB.incomingCirculars || []).find(c => c.id === id)).filter(Boolean);
-    const upStrip = uploaded.length ? `<div class="reg-uploaded">${uploaded.map(c => {
-      const n = (c.clauses || []).reduce((a, cl) => a + (cl.impact || []).filter(i => !i.noGap).length, 0);
-      return `<button class="reg-upcard" onclick="App.regulatoryView._analyze('${c.id}');App.regulatoryView._refresh()">
-        <span class="reg-upcard__ic">${App.icon('file')}</span>
-        <span style="flex:1;text-align:left"><b>${App.esc(c.file)}</b><span class="muted" style="display:block;font-size:12px">${App.esc(c.regulator)} · ${App.esc(c.ref)} · ${n} suggested change${n === 1 ? '' : 's'}</span></span>
-        <span class="pill pill--violet">View assessment</span></button>`;
-    }).join('')}</div>` : '';
-
-    return `<div class="page">
-      <div class="page__head"><div><h1>Regulatory</h1><p>Incoming regulator circulars, compared against your policy library. Tara flags the gap, drafts the edit with page citations, and routes it for approval.</p></div><div class="spacer"></div>
-        ${this._canEdit() ? `<button class="btn btn--primary" onclick="App.regulatoryView.uploadModal()">${App.icon('download')} Upload circular</button>` : ''}</div>
-      <div class="info-banner">${App.icon('shield')} <span>Tracked under <strong>Compliance › Regulatory Updates</strong>. Most regulations can't be pre-embedded — <strong>upload a circular PDF</strong> and Tara checks it against every policy. Suggestions are <strong>flagged for human review</strong>, never auto-applied.</span></div>
-      ${upStrip}
-      <div class="toolbar"><div class="search-input">${App.icon('search')}<input id="regSearch" placeholder="Search circulars…"/></div><span class="muted" style="font-size:12px;align-self:center">${gaps} of ${DB.circulars.length} watched circulars need a change</span></div>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th>Circular</th><th>Published</th><th>Affects</th><th>Status</th><th></th></tr></thead><tbody id="regBody">${rows}</tbody></table></div>
-    </div>`;
-  },
-
-  /* ---------------- upload (dummy PDF) ---------------- */
-  uploadModal() {
-    this._draftUpload = null;
-    App.openModal({
-      title: 'Upload a regulator circular', sub: 'Tara reads the document and checks every clause against your policy library.', lg: true,
-      body: `<div id="upBody"></div>`,
-      footer: `<button class="btn" onclick="App.closeModal()">Cancel</button>
-        <button class="btn btn--primary" id="upAnalyze" disabled onclick="App.regulatoryView.runAnalysis()">${App.icon('sparkles')} Analyze against policy library</button>`
-    });
-    this._renderUpload();
-  },
-  _renderUpload() {
-    const host = document.getElementById('upBody'); if (!host) return;
-    const d = this._draftUpload;
-    if (!d) {
-      const samples = (DB.incomingCirculars || []).map(c =>
-        `<button class="reg-pick" onclick="App.regulatoryView._pick('${c.id}')">${App.icon('file')}<div style="flex:1;text-align:left"><b>${App.esc(c.file)}</b><div class="muted" style="font-size:12px">${App.esc(c.regulator)} · ${App.esc(c.ref)} · ${c.pages} pages</div></div>${App.icon('arrow')}</button>`).join('');
-      host.innerHTML = `<div class="dropzone" onclick="document.getElementById('upPick').scrollIntoView({block:'nearest'})">${App.icon('download')}
-          <div style="font-weight:600;margin-top:8px">Drop a circular PDF here, or choose one</div>
-          <div class="muted" style="font-size:12.5px;margin-top:3px">PDF · up to 25 MB — text is parsed and matched to your policies</div></div>
-        <div class="setup-label" style="margin-top:16px">Demo — pick a sample circular to ingest</div>
-        <div id="upPick" class="reg-picklist">${samples}</div>`;
-    } else {
-      const c = d;
-      const affected = new Set(); let nChange = 0;
-      (c.clauses || []).forEach(cl => (cl.impact || []).forEach(i => { if (!i.noGap) { affected.add(i.policyId); nChange++; } }));
-      host.innerHTML = `<div class="file-card">${App.icon('file')}<div style="flex:1"><b>${App.esc(c.file)}</b><div class="muted" style="font-size:12px">${App.esc(c.regulator)} · ${App.esc(c.ref)} · ${c.date} · ${c.pages} pages</div></div>
-          <button class="btn btn--sm" onclick="App.pdf.open({kind:'circular',id:'${c.id}'})">${App.icon('eye')} Preview</button>
-          <button class="btn btn--sm" onclick="App.regulatoryView._draftUpload=null;App.regulatoryView._renderUpload();var b=document.getElementById('upAnalyze');if(b)b.disabled=true">Change</button></div>
-        <div class="info-banner" style="margin-top:14px;margin-bottom:0">${App.icon('sparkles')} <span>Ready to analyze <strong>${App.esc(c.title)}</strong> — Tara will scan ${c.clauses.length} clauses against your ${DB.policies.length} policies (≈ ${nChange} likely change${nChange === 1 ? '' : 's'} across ${affected.size} policies).</span></div>`;
-    }
-  },
-  _pick(id) {
-    this._draftUpload = (DB.incomingCirculars || []).find(c => c.id === id) || null;
-    this._renderUpload();
-    const b = document.getElementById('upAnalyze'); if (b) b.disabled = !this._draftUpload;
-  },
-  runAnalysis() {
-    const d = this._draftUpload; if (!d) return;
-    App.closeModal();
-    this._analyzing = d.id; this._refresh();
-    const self = this; setTimeout(function () { self._analyze(d.id); self._analyzing = null; self._refresh(); }, 1150);
-  },
-
-  _renderAnalyzing() {
-    const c = (DB.incomingCirculars || []).find(x => x.id === this._analyzing) || {};
-    return `<div class="page"><div class="reg-analyzing">
-      <div class="reg-analyzing__ic">${App.icon('sparkles')}</div>
-      <h2>Analyzing ${App.esc(c.file || 'circular')}…</h2>
-      <p class="muted">Reading ${c.pages || ''} pages · extracting clauses · comparing against ${DB.policies.length} policies in your library</p>
-      <div class="typing" style="margin:14px auto 0;width:fit-content"><span></span><span></span><span></span></div>
-    </div></div>`;
-  },
-
-  /* ---------------- impact assessment ---------------- */
-  _analyze(circId, force) {
-    // reuse a prior assessment (with its queued/dismissed/edits) unless an explicit re-scan is asked for
-    if (!force && this._assessments[circId]) { this.assessment = this._assessments[circId]; if (this._uploaded.indexOf(circId) < 0) this._uploaded.push(circId); return; }
-    const circ = (DB.incomingCirculars || []).find(c => c.id === circId); if (!circ) return;
-    const sugg = [];
-    circ.clauses.forEach(cl => (cl.impact || []).forEach(imp => {
-      const p = App.policy(imp.policyId);
-      let impact = null;
-      if (!imp.noGap && imp.sim && App.sim && App.sim.paramsFor(imp.policyId)) {
-        const r = App.sim.run(imp.policyId, imp.sim);
-        if (r.applicable) {
-          const dA = ((r.proposed.rate - r.base.rate) * 100).toFixed(1), dN = ((r.proposed.npa - r.base.npa) * 100).toFixed(1);
-          impact = { approvalDelta: dA, npaDelta: dN, flipped: (r.flipped.length || r.gained.length), total: r.total };
-        }
-      }
-      sugg.push({ key: circ.id + '|' + cl.id + '|' + imp.policyId, clause: cl, imp: imp, policy: p, impact: impact, status: imp.noGap ? 'nogap' : 'pending', edited: null });
-    }));
-    this.assessment = { circ: circ, suggestions: sugg };
-    this._assessments[circ.id] = this.assessment;
-    if (this._uploaded.indexOf(circ.id) < 0) this._uploaded.push(circ.id);
-  },
-  _backToList() { this.assessment = null; this._refresh(); },
-  _rescan() { const a = this.assessment; if (!a) return; this._analyze(a.circ.id, true); this._refresh(); App.toast('Re-scanned ' + a.circ.ref + ' — review state reset'); },
-
-  _renderAssessment() {
-    const a = this.assessment, c = a.circ;
-    const live = a.suggestions.filter(s => s.status !== 'nogap' && s.status !== 'dismissed');
-    const affected = Array.from(new Set(live.map(s => s.imp.policyId)));
-    const queued = a.suggestions.filter(s => s.status === 'queued').length;
-    const pending = a.suggestions.filter(s => s.status === 'pending').length;
-    const bulkBar = pending === 0
-      ? `<div class="reg-bulkbar reg-bulkbar--done">${App.icon('check')} <span>All suggestions reviewed${queued ? ' — ' + queued + ' sent to Approvals' : ''}.</span><div style="flex:1"></div>${queued ? `<button class="btn btn--sm btn--primary" onclick="App.navigate('approvals')">${App.icon('branch')} View ${queued} in Approvals</button>` : ''}</div>`
-      : `<div class="reg-bulkbar"><label class="reg-selall"><input type="checkbox" class="reg-selallcb" onchange="App.regulatoryView._selAll(this.checked)"> Select all · <span id="regSelN">0</span> selected</label><div style="flex:1"></div><button class="btn btn--sm" onclick="App.regulatoryView._bulk('dismiss')">Dismiss selected</button><button class="btn btn--sm btn--primary" onclick="App.regulatoryView._bulk('approve')">${App.icon('send')} Send selected for approval</button></div>`;
-
-    // group suggestions by policy
-    const order = Array.from(new Set(a.suggestions.map(s => s.imp.policyId)));
-    const groups = order.map(pid => {
-      const items = a.suggestions.filter(s => s.imp.policyId === pid);
-      const p = items[0].policy;
-      const cards = items.map(s => this._suggCard(s)).join('');
-      return `<div class="reg-group">
-        <div class="reg-group__h">${App.icon('file')}<b>${p ? App.esc(p.name) : App.esc(pid)}</b>
-          <span class="muted" style="font-size:12px">${p ? App.esc(p.category + ' · ' + p.version) : ''}</span><div style="flex:1"></div>
-          ${p ? `<button class="btn btn--sm" onclick="App.pdf.open({kind:'policy',id:'${p.id}'})">${App.icon('eye')} Open policy PDF</button>` : ''}</div>
-        ${cards}</div>`;
-    }).join('');
-
-    return `<div class="page">
-      <div class="reg-bk" onclick="App.regulatoryView._backToList()">${App.icon('arrow')} Back to circulars</div>
-      <div class="page__head"><div>
-        <h1 style="display:flex;align-items:center;gap:10px">${App.esc(c.title)}</h1>
-        <p>${App.esc(c.regulator)} · ${App.esc(c.ref)} · ${App.esc(c.date)} · ${c.pages} pages — analyzed against your ${DB.policies.length} policies.</p>
-      </div><div class="spacer"></div>
-        <button class="btn" onclick="App.pdf.open({kind:'circular',id:'${c.id}'})">${App.icon('file')} View circular PDF</button>
-        <button class="btn" onclick="App.regulatoryView._rescan()">${App.icon('sparkles')} Re-scan</button>
-        ${queued ? `<button class="btn btn--primary" onclick="App.navigate('approvals')">${App.icon('branch')} Open Approvals (${queued})</button>` : ''}
-      </div>
-      <div class="reg-stats">
-        ${this._stat(live.length, 'suggested change' + (live.length === 1 ? '' : 's'), 'edit')}
-        ${this._stat(affected.length, 'polic' + (affected.length === 1 ? 'y' : 'ies') + ' affected', 'file')}
-        ${this._stat(a.suggestions.length - live.length, 'no-gap clauses', 'check')}
-        ${this._stat(queued, 'queued for approval', 'branch')}
-      </div>
-      <div class="info-banner">${App.icon('sparkles')} <span>Each suggestion cites the <strong>circular page</strong> and the <strong>policy page</strong> it changes. Review individually, or select several and send them to Approvals together. Nothing changes the live policy until an approver signs off.</span></div>
-      ${groups}
-      ${bulkBar}
-    </div>`;
-  },
-  _stat(n, label, ic) {
-    return `<div class="reg-stat"><div class="reg-stat__ic">${App.icon(ic)}</div><div><div class="reg-stat__n">${n}</div><div class="reg-stat__l">${label}</div></div></div>`;
-  },
-  _suggCard(s) {
-    const c = this.assessment.circ, cl = s.clause, imp = s.imp, p = s.policy;
-    const sugText = s.edited || imp.suggested;
-    if (s.status === 'nogap') {
-      return `<div class="sugg sugg--nogap">
-        <div class="sugg__top"><span class="pill pill--green">${App.icon('check')} No change needed</span><span class="muted" style="font-size:12px">${App.esc(cl.ref)} · ${App.esc(cl.topic)}</span></div>
-        <p class="sugg__clause">${App.esc(cl.text)}</p>
-        <div class="sugg__cites">${App.pdf.cite('circular', c.id, cl.id, 'Circular')} ${p ? App.pdf.cite('policy', p.id, imp.anchor, p.name) : ''}<span class="muted" style="font-size:12px;align-self:center">— ${App.esc(imp.rationale)}</span></div>
+    const rel = (DB.amendments || []).map(a => {
+      const pols = []; const seen = {};
+      a.changes.forEach(ch => { if (!seen[ch.policyId]) { seen[ch.policyId] = 1; pols.push(ch.policyId); } });
+      const chips = pols.map(pid => { const p = App.policy(pid); return `<button class="amd-pol" onclick="App.regulatoryView.openEditor('${pid}')">${App.icon('file')} ${p ? App.esc(p.name) : pid}</button>`; }).join('');
+      return `<div class="reg-rel" id="regRelRow" data-n="${App.esc((a.title + ' ' + a.ref + ' ' + a.regulator).toLowerCase())}">
+        <div class="reg-rel__h">${App.ui.pill(a.regulator, 'blue')} <b>${App.esc(a.title)}</b><span class="muted" style="font-size:12px">· ${App.esc(a.ref)} · ${App.esc(a.date)}</span><div style="flex:1"></div>${App.ui.pill(a.changes.length + ' change' + (a.changes.length === 1 ? '' : 's') + ' · ' + pols.length + ' polic' + (pols.length === 1 ? 'y' : 'ies'), 'amber', true)}</div>
+        <p class="reg-rel__sum">${App.esc(a.summary)}</p>
+        <div class="reg-rel__pols">${chips}</div>
       </div>`;
-    }
-    const statusPill = s.status === 'queued' ? `<span class="pill pill--violet">${App.icon('branch')} Queued for approval</span>`
-      : s.status === 'dismissed' ? `<span class="pill pill--gray">Dismissed</span>`
-      : `<span class="pill pill--amber">${App.icon('alert')} Needs review</span>`;
-    const actionable = s.status === 'pending';
-    return `<div class="sugg" data-key="${s.key}">
-      <div class="sugg__top">
-        ${actionable ? `<input type="checkbox" class="regcb" value="${s.key}" onchange="App.regulatoryView._count()">` : ''}
-        ${statusPill}<span class="muted" style="font-size:12px">${App.esc(cl.ref)} · ${App.esc(cl.topic)}</span>
-        <div style="flex:1"></div>
-        <button class="btn btn--sm" onclick="App.regulatoryView.review('${s.key}')">${App.icon('eye')} Review</button>
-        ${actionable ? `<button class="btn btn--sm btn--primary" onclick="App.regulatoryView.sendForApproval(['${s.key}'])">${App.icon('send')} Send for approval</button>` : ''}
+    }).join('');
+
+    const polRows = affected.map(pid => {
+      const p = App.policy(pid); const chs = this._changesForPolicy(pid); const amds = this._amendmentsForPolicy(pid);
+      const res = chs.filter(c => this.st(c.id).status !== 'pending').length; const done = res === chs.length;
+      return `<div class="reg-polrow">
+        <div style="flex:1"><div class="cell-strong">${p ? App.esc(p.name) : pid} <span class="muted" style="font-weight:450;font-size:12px">· ${p ? p.version : ''}</span></div>
+          <div class="muted" style="font-size:12px;margin-top:2px">${chs.length} suggested change${chs.length === 1 ? '' : 's'} from ${amds.length} amendment${amds.length === 1 ? '' : 's'} — ${amds.map(a => a.ref).join(', ')}</div></div>
+        ${done ? App.ui.pill('Reviewed', 'green', true) : App.ui.pill(res + '/' + chs.length + ' reviewed', 'gray')}
+        <button class="btn btn--sm btn--primary" onclick="App.regulatoryView.openEditor('${pid}')">${App.icon('edit')} Review &amp; edit</button>
+      </div>`;
+    }).join('');
+
+    return `<div class="page">
+      <div class="page__head"><div><h1>Regulatory</h1><p>New releases from regulators, mapped to the exact policy changes they require. Review each change against the circular, edit the policy, then download the revised PDF to sign and route through your approval workflow.</p></div><div class="spacer"></div>
+        ${this._canEdit() ? `<button class="btn" onclick="App.regulatoryView._auditModal()">${App.icon('clipboard')} Audit log</button> <button class="btn btn--primary" onclick="App.regulatoryView.uploadModal()">${App.icon('download')} Upload circular</button>` : ''}</div>
+      <div class="info-banner">${App.icon('shield')} <span>One release can affect several policies, and one policy can collect changes from several releases. Approving a change edits the draft on the right — nothing is auto-filed; you download the signed PDF into your own approval workflow.</span></div>
+      <div class="reg-stats">
+        ${stat((DB.amendments || []).length, 'new releases', 'alert')}
+        ${stat(affected.length, 'policies affected', 'file')}
+        ${stat(all.length, 'suggested changes', 'edit')}
+        ${stat(resolved, 'reviewed', 'check')}
       </div>
-      <p class="sugg__clause">${App.esc(cl.text)}</p>
-      <div class="redline">
-        <div class="redline__row"><span class="redline__lbl">Current</span><span class="diff-del">${App.esc(imp.current)}</span></div>
-        <div class="redline__row"><span class="redline__lbl">Suggested</span><span class="diff-add">${App.esc(sugText)}</span></div>
-      </div>
-      <div class="sugg__cites">${App.pdf.cite('circular', c.id, cl.id, 'Circular')} ${p ? App.pdf.cite('policy', p.id, imp.anchor, p.name) : ''}</div>
-      <div class="sugg__why">${App.icon('sparkles')} <span>${App.esc(imp.rationale)}</span></div>
-      ${s.impact ? `<div class="sugg__impact">${App.icon('chart')} <span>Modelled on the test cohort: approval <b>${s.impact.approvalDelta >= 0 ? '+' : ''}${s.impact.approvalDelta} pts</b>, NPA <b>${s.impact.npaDelta >= 0 ? '+' : ''}${s.impact.npaDelta} pts</b>, ${s.impact.flipped} of ${s.impact.total} applicants reclassified.</span> <button class="btn btn--sm" onclick="App.simView.open('${imp.policyId}',{${Object.keys(imp.sim).map(k => k + ':' + imp.sim[k]).join(',')}},'From ${App.esc(c.ref)}')">Open simulator</button></div>` : ''}
+      <h3 style="margin:18px 0 10px;font-size:15px">Policies to review</h3>
+      <div class="card"><div class="card__body" style="padding:6px 16px">${polRows}</div></div>
+      <h3 style="margin:22px 0 10px;font-size:15px">New regulatory releases</h3>
+      <div class="toolbar"><div class="search-input">${App.icon('search')}<input id="regSearch" placeholder="Search releases…"/></div></div>
+      ${rel}
     </div>`;
   },
-  _count() {
-    const all = document.querySelectorAll('.regcb'), sel = document.querySelectorAll('.regcb:checked');
-    const el = document.getElementById('regSelN'); if (el) el.textContent = sel.length;
-    const sa = document.querySelector('.reg-selallcb'); if (sa) { sa.checked = all.length > 0 && sel.length === all.length; sa.indeterminate = sel.length > 0 && sel.length < all.length; }
+
+  /* ---------------- two-PDF editor ---------------- */
+  openEditor(pid) { this.editor = { policyId: pid, idx: 0 }; const p = App.policy(pid); this._log('Opened review', p ? p.name : pid); this._refresh(); },
+  _backToList() { this.editor = null; this._refresh(); },
+
+  _renderEditor() {
+    const pid = this.editor.policyId; const p = App.policy(pid);
+    const chs = this._changesForPolicy(pid); const amds = this._amendmentsForPolicy(pid);
+    if (this.editor.idx == null || this.editor.idx >= chs.length) this.editor.idx = 0;
+    return `<div class="page">
+      <div class="reg-bk" onclick="App.regulatoryView._backToList()">${App.icon('arrow')} Back to releases</div>
+      <div class="page__head"><div>
+        <h1>${p ? App.esc(p.name) : pid} <span class="muted" style="font-weight:450;font-size:15px">· ${p ? p.version : ''}</span></h1>
+        <p>${chs.length} suggested change${chs.length === 1 ? '' : 's'} from ${amds.length} amendment${amds.length === 1 ? '' : 's'} (${amds.map(a => a.ref).join(', ')}). Approve to apply on the right, then download to sign.</p>
+      </div></div>
+      <div class="reg-step" id="regStep">${this._stepHtml(chs, this.editor.idx)}</div>
+      <div class="reg-edit">
+        <div class="reg-edit__pane"><div class="reg-edit__h">${App.icon('alert')} Regulation (source)</div><div class="reg-edit__b" id="regSrcPdf"></div></div>
+        <div class="reg-edit__pane"><div class="reg-edit__h">${App.icon('file')} ${p ? App.esc(p.name) : pid} — editable draft</div><div class="reg-edit__b" id="regDocPdf">${this._policyPdfHtml(p, chs)}</div></div>
+      </div>
+      <div class="reg-bulkbar">
+        <span class="muted" style="font-size:13px" id="regProg">${this._progText(chs)}</span>
+        <div style="flex:1"></div>
+        <button class="btn btn--sm" onclick="App.regulatoryView._auditModal()">${App.icon('clipboard')} Audit log</button>
+        <button class="btn btn--sm" onclick="App.regulatoryView._downloadPdf()">${App.icon('download')} Download PDF</button>
+        <button class="btn btn--sm" onclick="App.regulatoryView._downloadWord()">${App.icon('download')} Download Word</button>
+        <button class="btn btn--sm btn--primary" onclick="App.regulatoryView._sendApproval()">${App.icon('send')} Send for approval</button>
+      </div>
+    </div>`;
   },
-  _selAll(on) { document.querySelectorAll('.regcb').forEach(function (cb) { cb.checked = on; }); this._count(); },
-  _selected() { return Array.from(document.querySelectorAll('.regcb:checked')).map(cb => cb.value); },
-  _bulk(action) {
-    const keys = this._selected();
-    if (!keys.length) { App.toast('Select one or more suggestions first', 'warn'); return; }
-    if (action === 'approve') this.sendForApproval(keys);
-    else { keys.forEach(k => { const s = this.assessment.suggestions.find(x => x.key === k); if (s && s.status === 'pending') s.status = 'dismissed'; }); App.toast(keys.length + ' suggestion(s) dismissed'); this._refresh(); }
+  _progText(chs) {
+    const applied = chs.filter(c => { const st = this.st(c.id).status; return st === 'accepted' || st === 'suggested'; }).length;
+    const res = chs.filter(c => this.st(c.id).status !== 'pending').length;
+    return applied + ' to apply · ' + res + '/' + chs.length + ' reviewed';
   },
 
-  /* ---------------- individual review (redline + policy PDF side-by-side) ---------------- */
-  review(key) {
-    const s = this.assessment.suggestions.find(x => x.key === key); if (!s) return;
-    const c = this.assessment.circ, cl = s.clause, imp = s.imp, p = s.policy;
-    const sugText = s.edited || imp.suggested;
-    const editable = s.status === 'pending';
-    App.openModal({
-      title: 'Suggested change · ' + (p ? p.name : imp.policyId), sub: c.regulator + ' ' + c.ref + ' · clause ' + cl.ref, lg: true,
-      body: `<div class="reg-review">
-        <div class="reg-review__left">
-          <div class="setup-label">Circular clause</div>
-          <div class="card card--pad" style="background:var(--surface-2)"><span class="muted" style="font-size:12px">${App.esc(cl.ref)} · ${App.esc(cl.topic)}</span><p style="margin:6px 0 0;font-size:13px;line-height:1.55">${App.esc(cl.text)}</p>
-            <div style="margin-top:8px">${App.pdf.cite('circular', c.id, cl.id, 'Circular')}</div></div>
-          <div class="redline" style="margin-top:14px">
-            <div class="redline__row"><span class="redline__lbl">Current</span><span class="diff-del">${App.esc(imp.current)}</span></div>
-          </div>
-          <div class="field" style="margin-top:10px"><label>Suggested change ${editable ? '<span class="muted" style="font-weight:400;text-transform:none">— edit before sending</span>' : ''}</label>
-            <textarea class="textarea" id="regEdit" rows="3" ${editable ? '' : 'disabled'}>${App.esc(sugText)}</textarea></div>
-          <div class="sugg__why" style="margin-top:4px">${App.icon('sparkles')} <span>${App.esc(imp.rationale)}</span></div>
-          <div style="margin-top:10px">${p ? App.pdf.cite('policy', p.id, imp.anchor, 'Jump to ' + p.name) : ''}</div>
+  _stepHtml(chs, i) {
+    const ch = chs[i]; if (!ch) return '<p class="muted">No changes.</p>';
+    const s = this.st(ch.id);
+    const statusTxt = s.status === 'accepted' ? 'Approved — applied on the right' : s.status === 'suggested' ? 'Your wording applied on the right' : s.status === 'rejected' ? 'Rejected — kept current' : 'Pending review';
+    return `<div class="reg-step__nav">
+        <button class="btn btn--sm" ${i <= 0 ? 'disabled' : ''} onclick="App.regulatoryView._step(${i - 1})">‹ Prev</button>
+        <span class="reg-step__pos">Change ${i + 1} of ${chs.length}</span>
+        <button class="btn btn--sm" ${i >= chs.length - 1 ? 'disabled' : ''} onclick="App.regulatoryView._step(${i + 1})">Next ›</button>
+      </div>
+      <div class="reg-step__body">
+        <div class="reg-step__sec"><b>${App.esc(ch.section)}</b>${ch.isNew ? ' <span class="tag">new clause</span>' : ''} <span class="chg__src">${App.esc(ch.amendment.regulator)} ${App.esc(ch.amendment.ref)} · ${App.esc(ch.clauseRef)}</span></div>
+        <div class="redline">
+          <div class="redline__row"><span class="redline__lbl">Current</span><span class="diff-del">${App.esc(ch.current)}</span></div>
+          <div class="redline__row"><span class="redline__lbl">Suggested</span><span class="diff-add">${App.esc(ch.suggested)}</span></div>
         </div>
-        <div class="reg-review__right">
-          <div class="reg-review__tabs"><button class="seg is-on" id="rgtP" onclick="App.regulatoryView._pane('policy')">Policy</button><button class="seg" id="rgtC" onclick="App.regulatoryView._pane('circular')">Circular</button></div>
-          <div id="regPdfPane" class="reg-review__pdf"></div>
+        <div class="sugg__why">${App.icon('sparkles')} <span>${App.esc(ch.rationale)}</span></div>
+        <div class="reg-step__ctrl">
+          <button class="btn btn--sm chg-ok${s.status === 'accepted' ? ' is-on' : ''}" onclick="App.regulatoryView._accept('${ch.id}')">${App.icon('check')} Approve change</button>
+          <button class="btn btn--sm chg-no${s.status === 'rejected' ? ' is-on' : ''}" onclick="App.regulatoryView._reject('${ch.id}')">${App.icon('x')} Reject (keep current)</button>
+          <button class="btn btn--sm" onclick="App.regulatoryView._toggleComment('${ch.id}')">${App.icon('chat')} Comment &amp; suggest${s.comment || s.suggestText ? ' ·' : ''}</button>
+          <span class="chg__status">${statusTxt}</span>
         </div>
-      </div>`,
-      footer: editable
-        ? `<button class="btn btn--danger" onclick="App.regulatoryView._dismissOne('${key}')">Dismiss</button><button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.regulatoryView._sendFromReview('${key}')">${App.icon('send')} Send for approval</button>`
-        : `<button class="btn" onclick="App.closeModal()">Close</button>${s.status === 'queued' ? `<button class="btn btn--primary" onclick="App.closeModal();App.navigate('approvals')">${App.icon('branch')} View in Approvals</button>` : ''}`
-    });
-    this._reviewCtx = { key: key, pane: 'policy' };
-    if (p) App.pdf.renderInto('regPdfPane', 'policy', p.id, { anchor: imp.anchor });
-    else App.pdf.renderInto('regPdfPane', 'circular', c.id, { anchor: cl.id });
-  },
-  _pane(which) {
-    const ctx = this._reviewCtx; if (!ctx) return; ctx.pane = which;
-    const s = this.assessment.suggestions.find(x => x.key === ctx.key); const c = this.assessment.circ;
-    document.getElementById('rgtP').classList.toggle('is-on', which === 'policy');
-    document.getElementById('rgtC').classList.toggle('is-on', which === 'circular');
-    if (which === 'policy' && s.policy) App.pdf.renderInto('regPdfPane', 'policy', s.policy.id, { anchor: s.imp.anchor });
-    else App.pdf.renderInto('regPdfPane', 'circular', c.id, { anchor: s.clause.id });
-  },
-  _sendFromReview(key) {
-    const s = this.assessment.suggestions.find(x => x.key === key);
-    const ta = document.getElementById('regEdit'); if (s && ta) s.edited = ta.value.trim() || s.imp.suggested;
-    App.closeModal(); this.sendForApproval([key]);
-  },
-  _dismissOne(key) { const s = this.assessment.suggestions.find(x => x.key === key); if (s) s.status = 'dismissed'; App.closeModal(); App.toast('Suggestion dismissed'); this._refresh(); },
-
-  /* ---------------- route to Approvals ---------------- */
-  sendForApproval(keys) {
-    const c = this.assessment.circ; const me = (App.state.user && App.state.user.id) || 'THQ0144'; let n = 0;
-    keys.forEach(key => {
-      const s = this.assessment.suggestions.find(x => x.key === key);
-      if (!s || s.status !== 'pending') return;
-      const imp = s.imp, cl = s.clause, p = s.policy; const to = s.edited || imp.suggested;
-      // don't raise a duplicate request for the same change from the same circular
-      const dup = DB.approvals.some(x => x.policy === imp.policyId && x.change && x.change.field === imp.anchor && x.change.to === to && x.sourceRef === c.ref);
-      if (dup) { s.status = 'queued'; return; }
-      const req = {
-        id: 'REQ-' + (2000 + DB.approvals.length), name: (p ? p.name : imp.policyId) + ' — ' + imp.anchor + ' → ' + to,
-        type: 'Regulatory Change', policy: imp.policyId, requestedBy: me, on: '21 Jun 2026', priority: 'High', status: 'Pending L1',
-        change: { field: imp.anchor, from: imp.current, to: to },
-        rationale: imp.rationale,
-        complianceFlag: 'Matches ' + c.regulator + ' ' + c.ref + ' (' + c.date + '), clause ' + cl.ref + '.',
-        impact: s.impact || null,
-        citations: [{ kind: 'policy', id: imp.policyId, anchor: imp.anchor }, { kind: 'circular', id: c.id, anchor: cl.id }],
-        sourceRef: c.ref
-      };
-      DB.approvals.unshift(req); s.status = 'queued'; n++;
-    });
-    if (n) { App.toast(n + ' change' + (n === 1 ? '' : 's') + ' sent to Approvals'); this._refresh(); }
-    else App.toast('Nothing to send — already queued or dismissed', 'warn');
+        ${s.cmtOpen || s.comment || s.suggestText || s.status === 'suggested' ? `<div class="reg-sug">
+          <div class="login__label" style="margin-top:0">Suggest different wording <span class="muted" style="font-weight:400;text-transform:none">— applies to the policy on the right</span></div>
+          <textarea class="textarea" rows="2" id="regSug-${ch.id}" oninput="App.regulatoryView._setSuggest('${ch.id}',this.value)">${App.esc(s.suggestText || ch.suggested)}</textarea>
+          <div class="row gap-6" style="margin-top:6px"><button class="btn btn--sm chg-sug${s.status === 'suggested' ? ' is-on' : ''}" onclick="App.regulatoryView._applySuggestion('${ch.id}')">${App.icon('edit')} Apply my suggestion</button></div>
+          <div class="login__label" style="margin-top:10px">Comment</div>
+          <textarea class="textarea" rows="2" placeholder="Note for the signer / approval pack…" oninput="App.regulatoryView._setComment('${ch.id}',this.value)">${App.esc(s.comment)}</textarea>
+        </div>` : ''}
+      </div>`;
   },
 
-  /* ---------------- auto-feed circular (existing single-policy path) ---------------- */
-  open(id) {
-    const c = DB.circulars.find(x => x.id === id); if (!c) return;
-    const p = App.policy(c.affects);
-    const canSim = App.sim && App.sim.paramsFor(c.affects) && c.simOverride;
-    const done = c.status === 'Actioned';
-    const gap = c.suggestion
-      ? `<div class="answer-card"><div class="answer-card__h">${App.icon('edit')} Gap detected · ${App.esc(c.field)}</div><div class="answer-card__b">
-          <div class="grid grid-2" style="gap:14px">
-            <div><div class="login__label" style="margin-bottom:6px">Your policy today</div><div class="card card--pad" style="background:var(--surface-2)"><span class="diff-del">${App.esc(c.current)}</span></div></div>
-            <div><div class="login__label" style="margin-bottom:6px">Regulator mandates</div><div class="card card--pad" style="background:var(--surface-2)"><span class="diff-add">${App.esc(c.mandated)}</span></div></div>
-          </div></div></div>
-          <div class="info-banner" style="margin-top:14px;margin-bottom:0">${App.icon('sparkles')} <span><strong>Suggested change (review required):</strong> ${App.esc(c.suggestion)}</span></div>
-          ${p ? `<div style="margin-top:12px">${App.pdf.cite('policy', p.id, c.field, p.name)}</div>` : ''}`
-      : `<div class="info-banner" style="margin-bottom:0;background:var(--green-50);border-color:#bcd3c2;color:var(--green-700)">${App.icon('check')} <span>No gap — your ${p ? App.esc(p.name) : 'policy'} already satisfies this circular.</span></div>`;
-    let footer = `<button class="btn" onclick="App.closeModal()">Close</button>`;
-    if (c.suggestion && !done) {
-      if (canSim) {
-        const ovLit = '{' + Object.keys(c.simOverride).map(k => k + ':' + c.simOverride[k]).join(',') + '}';
-        footer += `<button class="btn" onclick="App.closeModal();App.simView.open('${c.affects}',${ovLit},'From circular ${App.esc(c.ref)}')">${App.icon('chart')} Simulate impact</button>`;
+  /* right pane: the policy as an EDITABLE pdf page; changed lines highlighted */
+  _policyPdfHtml(p, chs) {
+    if (!p) return '<p class="muted">Policy not available.</p>';
+    const bySection = {}; chs.forEach(c => { if (!c.isNew) bySection[c.section] = c; });
+    const isNew = chs.filter(c => c.isNew);
+    let body = `<div class="pdfpg__rh"><span>${App.esc(p.name.replace(/[^a-z0-9]+/gi, '_'))}.pdf</span><span>Editable draft</span></div>
+      <div class="pdfpg__title">${App.esc(p.name)}</div><div class="pdfpg__sec">Key parameters</div>`;
+    Object.entries(p.facts || {}).forEach(([k, v]) => {
+      const c = bySection[k];
+      if (c) {
+        const s = this.st(c.id); const val = s.status === 'accepted' ? c.suggested : s.status === 'suggested' ? (s.suggestText || c.suggested) : c.current;
+        body += `<div class="pdfpg__kv chgline${s.status === 'accepted' ? ' is-accepted' : s.status === 'suggested' ? ' is-suggested' : ''}" id="line-${c.id}" data-cur="${App.esc(c.current)}" data-sug="${App.esc(c.suggested)}"><span class="pdfpg__n"></span><span class="pdfpg__k">${App.esc(k)}</span><span class="pdfpg__v val">${App.esc(val)}</span></div>`;
+      } else {
+        body += `<div class="pdfpg__kv"><span class="pdfpg__n"></span><span class="pdfpg__k">${App.esc(k)}</span><span class="pdfpg__v">${App.esc(v)}</span></div>`;
       }
-      footer += `<button class="btn btn--primary" onclick="App.regulatoryView.createChange('${c.id}')">${App.icon('send')} Create change request</button>`;
-    } else if (done) {
-      footer += `<span class="pill pill--green" style="align-self:center">${App.icon('check')} Change request raised</span>`;
+    });
+    if (isNew.length) {
+      body += `<div class="pdfpg__sec">Added clauses</div>`;
+      isNew.forEach(c => { const s = this.st(c.id); const val = s.status === 'accepted' ? c.suggested : s.status === 'suggested' ? (s.suggestText || c.suggested) : '(not yet added)';
+        body += `<div class="pdfpg__clause chgline${s.status === 'accepted' ? ' is-accepted' : s.status === 'suggested' ? ' is-suggested' : ''}" id="line-${c.id}" data-cur="(not yet added)" data-sug="${App.esc(c.suggested)}"><span class="pdfpg__n">+</span><span class="val">${App.esc(val)}</span></div>`; });
     }
+    body += `<div class="pdfpg__sec">Decision rules</div>`;
+    (p.rules || []).forEach(r => { body += `<div class="pdfpg__rule"><span class="pdfpg__n"></span><code>${App.esc(r)}</code></div>`; });
+    return `<div class="pdfviewer"><div class="pdfpg pdfpg--edit" contenteditable="true" spellcheck="false">${body}</div>
+      <div class="pdfpg__editnote">${App.icon('edit')} This page is editable — approve changes from the left, or tweak the text directly, then download to sign.</div></div>`;
+  },
+
+  /* ---------------- interactions (targeted DOM, no full re-render → keeps edits + scroll) ---------------- */
+  _mountEditor() {
+    const chs = this._changesForPolicy(this.editor.policyId); const ch = chs[this.editor.idx || 0];
+    if (ch && App.pdf) App.pdf.renderInto('regSrcPdf', 'amendment', ch.amendment.id, { anchor: ch.id });
+    this._focusLine(ch && ch.id);
+  },
+  _focusLine(id) {
+    const nodes = document.querySelectorAll('.chgline'); for (let i = 0; i < nodes.length; i++) nodes[i].classList.remove('is-focus');
+    if (id) { const el = document.getElementById('line-' + id); if (el) { el.classList.add('is-focus'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} } }
+  },
+  _step(i) {
+    const chs = this._changesForPolicy(this.editor.policyId); i = Math.max(0, Math.min(chs.length - 1, i)); this.editor.idx = i;
+    const step = document.getElementById('regStep'); if (step) step.innerHTML = this._stepHtml(chs, i);
+    const ch = chs[i]; if (ch && App.pdf) App.pdf.renderInto('regSrcPdf', 'amendment', ch.amendment.id, { anchor: ch.id });
+    this._focusLine(ch && ch.id);
+  },
+  _syncStep() {
+    const chs = this._changesForPolicy(this.editor.policyId);
+    const step = document.getElementById('regStep'); if (step) step.innerHTML = this._stepHtml(chs, this.editor.idx);
+    const prog = document.getElementById('regProg'); if (prog) prog.textContent = this._progText(chs);
+  },
+  _chOf(id) { return this._allChanges().find(function (c) { return c.id === id; }); },
+  _applyLine(id) {
+    const s = this.st(id); const el = document.getElementById('line-' + id); if (!el) return;
+    const v = el.querySelector('.val');
+    if (v) v.textContent = (s.status === 'accepted' ? el.getAttribute('data-sug') : s.status === 'suggested' ? (s.suggestText || el.getAttribute('data-sug')) : el.getAttribute('data-cur')) || v.textContent;
+    el.classList.toggle('is-accepted', s.status === 'accepted');
+    el.classList.toggle('is-suggested', s.status === 'suggested');
+  },
+  _accept(id) { this.st(id).status = 'accepted'; this._applyLine(id); this._syncStep(); const c = this._chOf(id); if (c) this._log('Approved change', App.policy(c.policyId).name + ' · ' + c.section + ': ' + c.current + ' → ' + c.suggested + ' (' + c.amendment.ref + ')'); },
+  _reject(id) { this.st(id).status = 'rejected'; this._applyLine(id); this._syncStep(); const c = this._chOf(id); if (c) this._log('Rejected change', App.policy(c.policyId).name + ' · ' + c.section + ' (' + c.amendment.ref + ')'); },
+  _toggleComment(id) { this.st(id).cmtOpen = !this.st(id).cmtOpen; this._syncStep(); },
+  _setComment(id, val) { this.st(id).comment = val; },
+  _setSuggest(id, val) { this.st(id).suggestText = val; },
+  _applySuggestion(id) { const s = this.st(id); if (!s.suggestText) { const c0 = this._chOf(id); s.suggestText = c0 ? c0.suggested : ''; } s.status = 'suggested'; this._applyLine(id); this._syncStep(); const c = this._chOf(id); if (c) this._log('Suggested wording', App.policy(c.policyId).name + ' · ' + c.section + ' → ' + s.suggestText); },
+
+  /* ---------------- download the revised policy (to sign — NOT routed to Approvals) ---------------- */
+  _revisedDocHtml(p) {
+    let rows = ''; const host = document.getElementById('regDocPdf');
+    const domLines = host ? host.querySelectorAll('.pdfpg__kv, .pdfpg__clause, .pdfpg__rule') : [];
+    if (domLines && domLines.length) {
+      for (let i = 0; i < domLines.length; i++) {
+        const el = domLines[i];
+        const k = el.querySelector ? el.querySelector('.pdfpg__k') : null;
+        const v = el.querySelector ? (el.querySelector('.pdfpg__v') || el.querySelector('.val')) : null;
+        const txt = (k && v) ? (k.textContent.trim() + ': ' + v.textContent.trim()) : el.textContent.trim();
+        rows += '<div class="r">' + App.esc(txt) + '</div>';
+      }
+    } else { // fallback (e.g. headless): build from data with approved / suggested changes applied
+      const self = this; const bySection = {}; this._changesForPolicy(p.id).forEach(c => { if (!c.isNew) bySection[c.section] = c; });
+      const applied = function (c, fb) { const s = self.st(c.id); return s.status === 'accepted' ? c.suggested : s.status === 'suggested' ? (s.suggestText || c.suggested) : fb; };
+      Object.entries(p.facts || {}).forEach(([k, v]) => { const c = bySection[k]; rows += '<div class="r">' + App.esc(k + ': ' + (c ? applied(c, v) : v)) + '</div>'; });
+      this._changesForPolicy(p.id).filter(c => c.isNew).forEach(c => { const s = self.st(c.id); if (s.status === 'accepted' || s.status === 'suggested') rows += '<div class="r">+ ' + App.esc(s.status === 'suggested' ? (s.suggestText || c.suggested) : c.suggested) + '</div>'; });
+    }
+    const notes = this._changesForPolicy(p.id).filter(c => this.st(c.id).comment).map(c => '<li><b>' + App.esc(c.section) + ':</b> ' + App.esc(this.st(c.id).comment) + '</li>').join('');
+    return '<!doctype html><html><head><meta charset="utf-8"><title>' + App.esc(p.name) + ' (revised draft)</title>'
+      + '<style>body{font-family:Calibri,Arial,sans-serif;max-width:720px;margin:48px auto;color:#1c1a16;line-height:1.5}h1{font-size:22px}.r{padding:5px 0;border-bottom:1px solid #eee}.m{color:#6b665c}</style></head><body>'
+      + '<h1>' + App.esc(p.name) + ' — revised draft (' + App.esc(p.version) + ')</h1>'
+      + '<p class="m">Prepared in PolicyOS · Tara from regulatory amendments. Print to PDF, sign, and submit to the approval workflow.</p>'
+      + rows + (notes ? '<h3>Reviewer comments</h3><ul>' + notes + '</ul>' : '')
+      + '<hr><p class="m" style="font-size:12px">Signature: ____________________   Date: __________</p></body></html>';
+  },
+  _downloadWord() {
+    const p = App.policy(this.editor.policyId); if (!p) return;
+    const html = this._revisedDocHtml(p); this._log('Downloaded Word', p.name);
+    try {
+      if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+        const blob = new Blob([html], { type: 'application/msword' }); const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = p.name.replace(/[^a-z0-9]+/gi, '_') + '_revised.doc';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+      }
+    } catch (e) {}
+    App.toast('Revised policy downloaded (Word) — review, sign, then submit to your approval workflow', 'ok');
+  },
+  _downloadPdf() {
+    const p = App.policy(this.editor.policyId); if (!p) return;
+    const html = this._revisedDocHtml(p); this._log('Downloaded PDF', p.name);
+    try {
+      if (typeof window !== 'undefined' && window.open) {
+        const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 350); }
+      }
+    } catch (e) {}
+    App.toast('Opening print view — Save as PDF, sign, then submit to your approval workflow', 'ok');
+  },
+  _sendApproval() {
+    const pid = this.editor.policyId; const p = App.policy(pid);
+    const chs = this._changesForPolicy(pid).filter(c => { const s = this.st(c.id); return (s.status === 'accepted' || s.status === 'suggested') && !s.sent; });
+    if (!chs.length) { App.toast('Approve or suggest at least one change first', 'warn'); return; }
+    const me = (App.state.user && App.state.user.id) || 'THQ0144'; let n = 0;
+    chs.forEach(ch => {
+      const s = this.st(ch.id); const a = ch.amendment; const to = s.status === 'suggested' ? (s.suggestText || ch.suggested) : ch.suggested;
+      const dup = DB.approvals.some(x => x.policy === pid && x.change && x.change.field === ch.section && x.change.to === to && x.sourceRef === a.ref);
+      if (!dup) {
+        DB.approvals.unshift({ id: 'REQ-' + (2000 + DB.approvals.length), name: (p ? p.name : pid) + ' — ' + ch.section + ' → ' + to,
+          type: 'Regulatory Change', policy: pid, requestedBy: me, on: '23 Jun 2026', priority: 'High', status: 'Pending L1',
+          change: { field: ch.section, from: ch.current, to: to },
+          rationale: ch.rationale + (s.status === 'suggested' ? '  Reviewer wording: ' + to : '') + (s.comment ? '  Note: ' + s.comment : ''),
+          complianceFlag: 'Matches ' + a.regulator + ' ' + a.ref + ' (' + a.date + '), clause ' + ch.clauseRef + '.',
+          citations: [{ kind: 'policy', id: pid, anchor: ch.section }], sourceRef: a.ref });
+        n++;
+      }
+      s.sent = true;
+    });
+    this._log('Sent for approval', (p ? p.name : pid) + ' · ' + n + ' change' + (n === 1 ? '' : 's'));
+    App.toast(n ? (n + ' change' + (n === 1 ? '' : 's') + ' sent to Approvals') : 'Already sent for approval', n ? 'ok' : 'warn');
+    this._syncStep();
+  },
+
+  /* ---------------- upload (dummy) — opens the editor for the release's first policy ---------------- */
+  uploadModal() {
     App.openModal({
-      title: c.title, sub: c.regulator + ' · ' + c.ref + ' · ' + c.date, lg: true,
-      body: `<div class="row gap-8" style="margin-bottom:12px;flex-wrap:wrap">${App.ui.pill(c.regulator, 'blue')} ${p ? App.ui.pill('Affects: ' + p.name, 'violet') : ''} ${App.ui.pill('Compliance › Regulatory Updates', 'gray')}</div>
-        <p style="font-size:13.5px;color:var(--ink-2);line-height:1.6">${App.esc(c.summary)}</p>
-        <div class="mt-16">${gap}</div>`,
-      footer
+      title: 'Upload a regulator circular', sub: 'Tara reads it and maps the required changes onto your policies.', lg: true,
+      body: `<div class="dropzone" onclick="document.getElementById('upPick').scrollIntoView({block:'nearest'})">${App.icon('download')}
+          <div style="font-weight:600;margin-top:8px">Drop a circular PDF here, or pick a recent release</div>
+          <div class="muted" style="font-size:12.5px;margin-top:3px">PDF · parsed and matched to your policy library</div></div>
+        <div class="setup-label" style="margin-top:16px">Recent releases</div>
+        <div id="upPick" class="reg-picklist">${(DB.amendments || []).map(a => `<button class="reg-pick" onclick="App.closeModal();App.regulatoryView.openEditor('${a.changes[0].policyId}')">${App.icon('alert')}<div style="flex:1;text-align:left"><b>${App.esc(a.title)}</b><div class="muted" style="font-size:12px">${App.esc(a.regulator)} · ${App.esc(a.ref)} · ${a.changes.length} change${a.changes.length === 1 ? '' : 's'}</div></div>${App.icon('arrow')}</button>`).join('')}</div>`,
+      footer: `<button class="btn" onclick="App.closeModal()">Close</button>`
     });
-  },
-  createChange(id) {
-    const c = DB.circulars.find(x => x.id === id); if (!c) return;
-    const p = App.policy(c.affects);
-    let impact = null;
-    let rationale = 'Aligns ' + (p ? p.name : 'policy') + ' with ' + c.regulator + ' ' + c.ref + ' (' + c.date + ').';
-    if (App.sim && c.simOverride && App.sim.paramsFor(c.affects)) {
-      const r = App.sim.run(c.affects, c.simOverride);
-      if (r.applicable) {
-        const dA = ((r.proposed.rate - r.base.rate) * 100).toFixed(1), dN = ((r.proposed.npa - r.base.npa) * 100).toFixed(1);
-        impact = { approvalDelta: dA, npaDelta: dN, flipped: (r.flipped.length || r.gained.length) };
-        rationale += ' Simulated impact: approval ' + (dA >= 0 ? '+' : '') + dA + ' pts, NPA ' + (dN >= 0 ? '+' : '') + dN + ' pts.';
-      }
-    }
-    const me = (App.state.user && App.state.user.id) || 'THQ0144';
-    const req = { id: 'REQ-' + (2000 + DB.approvals.length), name: (p ? p.name : 'Policy') + ' — ' + c.field + ' → ' + c.mandated,
-      type: 'Regulatory Change', policy: c.affects, requestedBy: me, on: '21 Jun 2026', priority: 'High', status: 'Pending L1',
-      change: { field: c.field, from: c.current, to: c.mandated }, rationale,
-      complianceFlag: 'Matches ' + c.regulator + ' circular ' + c.ref + ' (' + c.date + ').', impact,
-      citations: p ? [{ kind: 'policy', id: p.id, anchor: c.field }] : [], sourceRef: c.ref };
-    DB.approvals.unshift(req);
-    c.status = 'Actioned';
-    App.closeModal(); App.toast('Change request created from ' + c.ref + ' → Approvals'); App.navigate('approvals');
   }
 };

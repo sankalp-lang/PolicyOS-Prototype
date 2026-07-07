@@ -199,7 +199,7 @@ chk(Object.keys(_pols58).length >= 3, 'Regulatory: one amendment (AMD-58) affect
 var _plChanges = App.regulatoryView._changesForPolicy('P-PL');
 var _plAmds = {}; _plChanges.forEach(function(c){_plAmds[c.amendment.id]=1;});
 chk(_plChanges.length >= 3 && Object.keys(_plAmds).length >= 2, 'Regulatory: one policy (P-PL) collects changes from multiple amendments');
-chk(typeof App.regulatoryView.openEditor==='function' && typeof App.regulatoryView._downloadPdf==='function' && typeof App.regulatoryView._downloadWord==='function' && typeof App.regulatoryView._sendApproval==='function', 'Regulatory: editor + PDF/Word download + send-for-approval all present');
+chk(typeof App.regulatoryView.openEditor==='function' && typeof App.regulatoryView._downloadPdf==='function' && typeof App.regulatoryView._downloadWord==='function' && typeof App.regulatoryView._sendApproval==='function' && typeof App.regulatoryView._confirmSend==='function', 'Regulatory: editor + PDF/Word download + send-for-approval (workflow chooser) all present');
 chk(App.pdf.build('amendment','AMD-58').pages.length >= 2, 'PDF: amendment renders as a circular-style PDF (left pane)');
 App.regulatoryView.openEditor('P-PL');
 var _ed=null; try { _ed = App.regulatoryView._renderEditor(); } catch(e){ _ed = 'ERR '+e; }
@@ -218,12 +218,40 @@ var _apprBefore = DB.approvals.length;
 try { App.regulatoryView._downloadWord(); } catch(e){}
 try { App.regulatoryView._downloadPdf(); } catch(e){}
 chk(DB.approvals.length === _apprBefore, 'Regulatory: PDF/Word download does NOT route to Approvals (sign offline)');
-// Send for approval DOES route approved + suggested changes
-App.regulatoryView._sendApproval();
+// Send for approval DOES route approved + suggested changes, following the CHOSEN workflow (level-by-level)
+App.regulatoryView._confirmSend('WF1');
 chk(DB.approvals.length === _apprBefore + 2, 'Regulatory: Send-for-approval routes approved + suggested changes to Approvals');
 chk(!!DB.approvals[0].sourceRef && /48%|720/.test(String(DB.approvals[0].change.to)), 'Regulatory: approval carries source ref + reviewer value');
+chk(/Lending Policy Approval/.test(DB.approvals[0].workflow||'') && DB.approvals[0].status==='Pending L1', 'Regulatory: chosen workflow stamped on the request + starts at its first level');
 chk(App.regulatoryView._audit.length > 0, 'Regulatory: audit log records the review actions');
 App.regulatoryView.editor = null; App.regulatoryView._st = {}; App.regulatoryView._audit = [];
+
+// Regulatory: auto-map toggle + per-release move-to-review + add/remove affected policies
+App.regulatoryView.autorun = true; App.regulatoryView._amd = {};
+var _amdId = DB.amendments[0].id;
+var _reviewOn = App.regulatoryView._reviewPolicies().length;
+chk(_reviewOn > 0, 'Regulatory: autorun ON populates the review queue automatically');
+App.regulatoryView._toggleAutorun();
+chk(App.regulatoryView.autorun === false && App.regulatoryView._reviewPolicies().length === 0, 'Regulatory: autorun OFF empties the queue until releases are moved in');
+App.regulatoryView._promote(_amdId);
+chk(App.regulatoryView._reviewPolicies().length > 0, 'Regulatory: moving a release to review adds its policies to the queue');
+App.regulatoryView._dismiss(_amdId);
+chk(App.regulatoryView._amd[_amdId].decided === 'out', 'Regulatory: a release can be dismissed');
+App.regulatoryView._promote(_amdId);
+var _pidsBefore = App.regulatoryView._effectivePolicyIds(DB.amendments[0]).length;
+var _rmPid = DB.amendments[0].changes[0].policyId;
+App.regulatoryView._removePolicy(_amdId, _rmPid);
+chk(App.regulatoryView._effectivePolicyIds(DB.amendments[0]).indexOf(_rmPid) < 0, 'Regulatory: reviewer can remove an affected policy from a release');
+var _origPids = DB.amendments[0].changes.map(function(c){return c.policyId;});
+var _addPid = DB.policies.map(function(p){return p.id;}).find(function(id){ return _origPids.indexOf(id) < 0; });
+var _addChBefore = App.regulatoryView._changesForPolicy(_addPid).length;
+App.regulatoryView._addPolicy(_amdId, _addPid);
+chk(App.regulatoryView._effectivePolicyIds(DB.amendments[0]).indexOf(_addPid) >= 0 && App.regulatoryView._changesForPolicy(_addPid).length === _addChBefore + 1, 'Regulatory: reviewer can add a new affected policy (with an editable manual change)');
+App.regulatoryView.autorun = true; App.regulatoryView._amd = {}; App.regulatoryView.editor = null; App.regulatoryView._st = {}; App.regulatoryView._audit = [];
+
+// Sidebar: "Ask Tara" removed as a nav item for every role (it's the floating launcher instead)
+chk(!App.navModel(admin).pinned.concat(App.navModel(admin).groups.flatMap(function(g){return g.items;})).some(function(i){return i.id==='copilot';}), 'Sidebar: no "Ask Tara" nav item for admin/manager');
+chk(!App.navModel(staff).pinned.some(function(i){return i.id==='copilot';}), 'Sidebar: no "Ask Tara" nav item for staff');
 
 // Tara what-if hook routes to the simulator (RBAC-scoped)
 var simAns = App.askTara('what if we raise the personal loan cibil cutoff to 760', admin);

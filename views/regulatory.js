@@ -20,6 +20,9 @@ App.regulatoryView = {
   editor: null,        // { policyId, idx }
   _st: {},             // per-change state: { status:'pending'|'accepted'|'rejected'|'suggested', comment, suggestText, cmtOpen, sent }
   _audit: [],          // module audit trail (most-recent first)
+  autorun: true,       // ON = every release auto-maps onto the affected policies (populates "Policies to review")
+  _amd: {},            // per-release overrides: { decided:'pending'|'in'|'out', removed:{pid:1}, added:[changeObj] }
+  _pickWf: null,       // workflow chosen in the send-for-approval dialog
 
   _refresh() {
     const root = document.getElementById('viewRoot'); if (!root) return;
@@ -28,15 +31,67 @@ App.regulatoryView = {
   },
   _canEdit() { const r = App.currentUser().role; return r === 'admin' || r === 'policy_manager' || r === 'risk_approver'; },
 
+  /* ---------------- per-release override state ---------------- */
+  _amdSt(id) { if (!this._amd[id]) this._amd[id] = { decided: 'pending', removed: {}, added: [] }; return this._amd[id]; },
+  _included(a) { return this.autorun || this._amdSt(a.id).decided === 'in'; },  // is this release in the "Policies to review" queue?
+  // the change set for one release after the reviewer's add/remove of affected policies
+  _effectiveChanges(a) {
+    const st = this._amdSt(a.id);
+    const chs = (a.changes || []).filter(c => !st.removed[c.policyId]);
+    return (st.added && st.added.length) ? chs.concat(st.added) : chs;
+  },
+  _effectivePolicyIds(a) { const seen = {}, out = []; this._effectiveChanges(a).forEach(c => { if (!seen[c.policyId]) { seen[c.policyId] = 1; out.push(c.policyId); } }); return out; },
+
   /* ---------------- aggregation ---------------- */
+  // every suggested change across all releases (respects add/remove, ignores queue inclusion) - drives the editor + stats
   _allChanges() {
     const out = [];
-    (DB.amendments || []).forEach(a => (a.changes || []).forEach(ch => out.push(Object.assign({}, ch, { amendment: a }))));
+    (DB.amendments || []).forEach(a => this._effectiveChanges(a).forEach(ch => out.push(Object.assign({}, ch, { amendment: a }))));
     return out;
   },
   _changesForPolicy(pid) { return this._allChanges().filter(c => c.policyId === pid); },
   _affectedPolicies() { const seen = {}, out = []; this._allChanges().forEach(c => { if (!seen[c.policyId]) { seen[c.policyId] = 1; out.push(c.policyId); } }); return out; },
+  // policies that belong in the "Policies to review" queue (autorun ON = all; OFF = only releases moved in)
+  _reviewPolicies() {
+    const seen = {}, out = [];
+    (DB.amendments || []).forEach(a => { if (!this._included(a)) return; this._effectivePolicyIds(a).forEach(pid => { if (!seen[pid]) { seen[pid] = 1; out.push(pid); } }); });
+    return out;
+  },
   _amendmentsForPolicy(pid) { const seen = {}, out = []; this._changesForPolicy(pid).forEach(c => { if (!seen[c.amendment.id]) { seen[c.amendment.id] = 1; out.push(c.amendment); } }); return out; },
+
+  /* ---------------- autorun toggle + per-release decisions / policy add-remove ---------------- */
+  _toggleAutorun() { this.autorun = !this.autorun; this._log('Auto-mapping ' + (this.autorun ? 'on' : 'off'), this.autorun ? 'Releases map onto policies automatically' : 'Reviewer decides which releases enter the queue'); this._refresh(); },
+  _promote(id) { this._amdSt(id).decided = 'in'; const a = (DB.amendments || []).find(x => x.id === id); this._log('Moved release to review', a ? (a.ref + ' - ' + a.title) : id); this._refresh(); },
+  _dismiss(id) { this._amdSt(id).decided = 'out'; const a = (DB.amendments || []).find(x => x.id === id); this._log('Dismissed release', a ? (a.ref + ' - ' + a.title) : id); this._refresh(); },
+  _resetDecision(id) { this._amdSt(id).decided = 'pending'; this._refresh(); },
+  _removePolicy(amdId, pid) {
+    const st = this._amdSt(amdId); st.added = (st.added || []).filter(c => c.policyId !== pid); st.removed[pid] = 1;
+    const a = (DB.amendments || []).find(x => x.id === amdId); const p = App.policy(pid);
+    this._log('Removed affected policy', (p ? p.name : pid) + ' from ' + (a ? a.ref : amdId)); this._refresh();
+  },
+  _addPolicyModal(amdId) {
+    const a = (DB.amendments || []).find(x => x.id === amdId); if (!a) return;
+    const have = {}; this._effectivePolicyIds(a).forEach(pid => have[pid] = 1);
+    const opts = DB.policies.filter(p => !have[p.id] && App.canViewPolicy(p, App.currentUser()));
+    App.openModal({
+      title: 'Add an affected policy', sub: a.regulator + ' · ' + a.ref + ' - pick a policy this release should also touch.',
+      body: opts.length ? `<div class="reg-picklist">${opts.map(p => `<button class="reg-pick" onclick="App.regulatoryView._addPolicy('${amdId}','${p.id}')">${App.icon('file')}<div style="flex:1;text-align:left"><b>${App.esc(p.name)}</b><div class="muted" style="font-size:12px">${App.esc(p.category)} · ${App.esc(p.sub)}</div></div>${App.icon('plus')}</button>`).join('')}</div>`
+        : App.ui.empty('file', 'No more policies to add', 'Every policy you can access is already mapped to this release.'),
+      footer: `<button class="btn" onclick="App.closeModal()">Close</button>`
+    });
+  },
+  _addPolicy(amdId, pid) {
+    const a = (DB.amendments || []).find(x => x.id === amdId); const p = App.policy(pid); if (!a || !p) return;
+    const st = this._amdSt(amdId); delete st.removed[pid];
+    const already = (a.changes || []).some(c => c.policyId === pid) || (st.added || []).some(c => c.policyId === pid);
+    if (!already) {
+      const fk = Object.keys(p.facts || {})[0] || 'Clause';
+      st.added.push({ id: 'MAN-' + amdId + '-' + pid, policyId: pid, clauseRef: 'Manual review', section: fk,
+        current: (p.facts && p.facts[fk]) || '(current)', suggested: (p.facts && p.facts[fk]) || '',
+        rationale: 'Manually flagged for review against ' + a.regulator + ' ' + a.ref + '. Edit the policy directly, then send for approval.', manual: true });
+    }
+    this._log('Added affected policy', p.name + ' to ' + a.ref); App.closeModal(); this._refresh();
+  },
   st(id) { if (!this._st[id]) this._st[id] = { status: 'pending', comment: '', suggestText: '', cmtOpen: false, sent: false }; return this._st[id]; },
   _log(action, detail) { const u = App.currentUser(); let ts = ''; try { ts = new Date().toLocaleString(); } catch (e) {} this._audit.unshift({ t: ts, user: u ? u.name : '-', role: u ? (DB.roleLabels[u.role] || u.role) : '', action: action, detail: detail || '' }); },
   _auditModal() {
@@ -50,21 +105,37 @@ App.regulatoryView = {
   _renderList(ctx) {
     const all = this._allChanges();
     const affected = this._affectedPolicies();
+    const review = this._reviewPolicies();
     const resolved = all.filter(c => this.st(c.id).status !== 'pending').length;
     const stat = (n, label, ic) => `<div class="reg-stat"><div class="reg-stat__ic">${App.icon(ic)}</div><div><div class="reg-stat__n">${n}</div><div class="reg-stat__l">${label}</div></div></div>`;
 
+    const canEdit = this._canEdit();
     const rel = (DB.amendments || []).map(a => {
-      const pols = []; const seen = {};
-      a.changes.forEach(ch => { if (!seen[ch.policyId]) { seen[ch.policyId] = 1; pols.push(ch.policyId); } });
-      const chips = pols.map(pid => { const p = App.policy(pid); return `<button class="amd-pol" onclick="App.regulatoryView.openEditor('${pid}')">${App.icon('file')} ${p ? App.esc(p.name) : pid}</button>`; }).join('');
-      return `<div class="reg-rel" id="regRelRow" data-n="${App.esc((a.title + ' ' + a.ref + ' ' + a.regulator).toLowerCase())}">
-        <div class="reg-rel__h">${App.ui.pill(a.regulator, 'blue')} <b>${App.esc(a.title)}</b><span class="muted" style="font-size:12px">· ${App.esc(a.ref)} · ${App.esc(a.date)}</span><div style="flex:1"></div>${App.ui.pill(a.changes.length + ' change' + (a.changes.length === 1 ? '' : 's') + ' · ' + pols.length + ' polic' + (pols.length === 1 ? 'y' : 'ies'), 'amber', true)}</div>
+      const st = this._amdSt(a.id);
+      const pols = this._effectivePolicyIds(a);
+      const chCount = this._effectiveChanges(a).length;
+      const included = this._included(a);
+      const dismissed = !this.autorun && st.decided === 'out';
+      const chips = pols.map(pid => { const p = App.policy(pid);
+        return `<span class="amd-pol${canEdit ? ' amd-pol--rm' : ''}"><button class="amd-pol__open" onclick="App.regulatoryView.openEditor('${pid}')">${App.icon('file')} ${p ? App.esc(p.name) : pid}</button>${canEdit ? `<button class="amd-pol__x" title="Remove this policy from the release" onclick="event.stopPropagation();App.regulatoryView._removePolicy('${a.id}','${pid}')">${App.icon('x')}</button>` : ''}</span>`;
+      }).join('');
+      const addBtn = canEdit ? `<button class="amd-addpol" onclick="App.regulatoryView._addPolicyModal('${a.id}')">${App.icon('plus')} Add policy</button>` : '';
+      // decision row appears only when auto-mapping is OFF
+      let decision = '';
+      if (!this.autorun && canEdit) {
+        if (st.decided === 'in') decision = `<div class="reg-rel__decide">${App.ui.pill('Moved to review', 'green', true)}<button class="btn btn--sm" onclick="App.regulatoryView._resetDecision('${a.id}')">Undo</button></div>`;
+        else if (st.decided === 'out') decision = `<div class="reg-rel__decide">${App.ui.pill('Dismissed', 'gray', true)}<button class="btn btn--sm" onclick="App.regulatoryView._resetDecision('${a.id}')">Undo</button></div>`;
+        else decision = `<div class="reg-rel__decide"><span class="muted" style="font-size:12px">Move this release into review?</span><button class="btn btn--sm chg-ok" onclick="App.regulatoryView._promote('${a.id}')">${App.icon('check')} Move to review</button><button class="btn btn--sm chg-no" onclick="App.regulatoryView._dismiss('${a.id}')">${App.icon('x')} Dismiss</button></div>`;
+      }
+      return `<div class="reg-rel${dismissed ? ' is-dismissed' : ''}${!this.autorun && st.decided === 'in' ? ' is-inreview' : ''}" id="regRelRow" data-n="${App.esc((a.title + ' ' + a.ref + ' ' + a.regulator).toLowerCase())}">
+        <div class="reg-rel__h">${App.ui.pill(a.regulator, 'blue')} <b>${App.esc(a.title)}</b><span class="muted" style="font-size:12px">· ${App.esc(a.ref)} · ${App.esc(a.date)}</span><div style="flex:1"></div>${App.ui.pill(chCount + ' change' + (chCount === 1 ? '' : 's') + ' · ' + pols.length + ' polic' + (pols.length === 1 ? 'y' : 'ies'), 'amber', true)}</div>
         <p class="reg-rel__sum">${App.esc(a.summary)}</p>
-        <div class="reg-rel__pols">${chips}</div>
+        <div class="reg-rel__pols">${chips}${addBtn}</div>
+        ${decision}
       </div>`;
     }).join('');
 
-    const polRows = affected.map(pid => {
+    const polRows = review.map(pid => {
       const p = App.policy(pid); const chs = this._changesForPolicy(pid); const amds = this._amendmentsForPolicy(pid);
       const res = chs.filter(c => this.st(c.id).status !== 'pending').length; const done = res === chs.length;
       return `<div class="reg-polrow">
@@ -86,8 +157,14 @@ App.regulatoryView = {
         ${stat(resolved, 'reviewed', 'check')}
       </div>
       <h3 style="margin:18px 0 10px;font-size:15px">Policies to review</h3>
-      <div class="card"><div class="card__body" style="padding:6px 16px">${polRows}</div></div>
-      <h3 style="margin:22px 0 10px;font-size:15px">New regulatory releases</h3>
+      <div class="card"><div class="card__body" style="padding:6px 16px">${polRows || App.ui.empty('check', this.autorun ? 'Nothing to review' : 'No releases in the queue', this.autorun ? 'New releases will map onto the affected policies here.' : 'Auto-mapping is off - move a release into review from the list below.')}</div></div>
+      <div class="reg-relhead">
+        <h3 style="font-size:15px;margin:0">New regulatory releases</h3>
+        <div style="flex:1"></div>
+        ${canEdit ? `<span class="reg-toggle__lbl">Auto-map to affected policies</span>
+          <button class="switch${this.autorun ? ' is-on' : ''}" role="switch" aria-checked="${this.autorun}" title="${this.autorun ? 'On - releases map onto policies automatically' : 'Off - you decide which releases enter review'}" onclick="App.regulatoryView._toggleAutorun()"><span class="switch__dot"></span></button>` : ''}
+      </div>
+      ${canEdit && !this.autorun ? `<div class="info-banner" style="margin-top:0">${App.icon('info')} <span>Auto-mapping is <strong>off</strong>. Tick <strong>Move to review</strong> on a release to send its policies to the queue above, or <strong>Dismiss</strong> to skip it. You can also add or remove the affected policies on any release.</span></div>` : ''}
       <div class="toolbar"><div class="search-input">${App.icon('search')}<input id="regSearch" placeholder="Search releases…"/></div></div>
       ${rel}
     </div>`;
@@ -271,27 +348,74 @@ App.regulatoryView = {
     } catch (e) {}
     App.toast('Opening print view - Save as PDF, sign, then submit to your approval workflow', 'ok');
   },
+  /* Send for approval → first pick the approval workflow (from Approvals › Manage Workflows),
+     so the change follows a defined level-by-level maker-checker chain. */
+  _preferredWorkflow(p) {
+    const wfs = DB.workflows || [];
+    return (p && wfs.find(w => w.category === p.category)) || wfs[0] || null;
+  },
+  _wfChainHtml(w) {
+    if (!w) return '<p class="muted">No workflow defined.</p>';
+    return w.levels.map(l => {
+      const who = l.users.map(uid => { const e = App.emp(uid); return e ? App.esc(e.name) : uid; }).join(', ');
+      const crit = l.criteria === 'All' ? 'All must approve' : l.criteria === 'Anyone' ? 'Anyone can approve' : 'Custom rule';
+      return `<div class="wf-lvl"><span class="step"><span class="step__num">${l.n}</span></span><div style="flex:1"><b style="font-weight:600;font-size:12.5px">Level ${l.n}</b> <span class="tag">${crit}</span><div class="muted" style="font-size:12px;margin-top:2px">${who}</div></div></div>`;
+    }).join('');
+  },
+  _wfOptionHtml(w, sel) {
+    const users = new Set(); w.levels.forEach(l => l.users.forEach(u => users.add(u)));
+    return `<label class="wf-opt${sel ? ' is-sel' : ''}" onclick="App.regulatoryView._pickWorkflow('${w.id}')"><span class="wf-opt__radio"></span>
+      <div style="flex:1"><b style="font-weight:600">${App.esc(w.name)}</b><div class="muted" style="font-size:12px">${App.esc(w.category)} · ${w.levels.length} level${w.levels.length === 1 ? '' : 's'} · ${users.size} approver${users.size === 1 ? '' : 's'}</div></div>
+      ${App.ui.pill(w.status, 'green')}</label>`;
+  },
+  _pickWorkflow(id) {
+    this._pickWf = id;
+    document.querySelectorAll('#wfPick .wf-opt').forEach(el => el.classList.remove('is-sel'));
+    const idx = (DB.workflows || []).findIndex(w => w.id === id);
+    const opts = document.querySelectorAll('#wfPick .wf-opt'); if (opts[idx]) opts[idx].classList.add('is-sel');
+    const chain = document.getElementById('wfChain'); const w = (DB.workflows || []).find(x => x.id === id);
+    if (chain) chain.innerHTML = `<div class="login__label" style="margin-top:14px">Approval chain</div>${this._wfChainHtml(w)}`;
+  },
   _sendApproval() {
     const pid = this.editor.policyId; const p = App.policy(pid);
     const chs = this._changesForPolicy(pid).filter(c => { const s = this.st(c.id); return (s.status === 'accepted' || s.status === 'suggested') && !s.sent; });
     if (!chs.length) { App.toast('Approve or suggest at least one change first', 'warn'); return; }
+    const pref = this._preferredWorkflow(p); this._pickWf = pref ? pref.id : null;
+    App.openModal({
+      title: 'Send for approval', sub: chs.length + ' change' + (chs.length === 1 ? '' : 's') + ' on ' + (p ? p.name : pid) + ' - choose the workflow it should follow.', lg: true,
+      body: `<div class="info-banner" style="margin-top:0">${App.icon('shield')} <span>The change routes through this maker-checker chain, level by level. The requester can never self-approve.</span></div>
+        <div class="login__label">Approval workflow</div>
+        <div id="wfPick">${(DB.workflows || []).map(w => this._wfOptionHtml(w, pref && w.id === pref.id)).join('')}</div>
+        <div id="wfChain"><div class="login__label" style="margin-top:14px">Approval chain</div>${this._wfChainHtml(pref)}</div>`,
+      footer: `<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.regulatoryView._confirmSend()">${App.icon('send')} Send ${chs.length} change${chs.length === 1 ? '' : 's'}</button>`
+    });
+  },
+  _confirmSend(wfId) {
+    wfId = wfId || this._pickWf;
+    const wf = (DB.workflows || []).find(w => w.id === wfId) || null;
+    const pid = this.editor.policyId; const p = App.policy(pid);
+    const chs = this._changesForPolicy(pid).filter(c => { const s = this.st(c.id); return (s.status === 'accepted' || s.status === 'suggested') && !s.sent; });
+    if (!chs.length) { App.toast('Approve or suggest at least one change first', 'warn'); return; }
     const me = (App.state.user && App.state.user.id) || 'THQ0144'; let n = 0;
+    const firstLevel = wf && wf.levels && wf.levels.length ? wf.levels[0].n : 1;
     chs.forEach(ch => {
       const s = this.st(ch.id); const a = ch.amendment; const to = s.status === 'suggested' ? (s.suggestText || ch.suggested) : ch.suggested;
       const dup = DB.approvals.some(x => x.policy === pid && x.change && x.change.field === ch.section && x.change.to === to && x.sourceRef === a.ref);
       if (!dup) {
         DB.approvals.unshift({ id: 'REQ-' + (2000 + DB.approvals.length), name: (p ? p.name : pid) + ' - ' + ch.section + ' → ' + to,
-          type: 'Regulatory Change', policy: pid, requestedBy: me, on: '23 Jun 2026', priority: 'High', status: 'Pending L1',
+          type: 'Regulatory Change', policy: pid, requestedBy: me, on: '23 Jun 2026', priority: 'High', status: 'Pending L' + firstLevel,
           change: { field: ch.section, from: ch.current, to: to },
           rationale: ch.rationale + (s.status === 'suggested' ? '  Reviewer wording: ' + to : '') + (s.comment ? '  Note: ' + s.comment : ''),
           complianceFlag: 'Matches ' + a.regulator + ' ' + a.ref + ' (' + a.date + '), clause ' + ch.clauseRef + '.',
-          citations: [{ kind: 'policy', id: pid, anchor: ch.section }], sourceRef: a.ref });
+          citations: [{ kind: 'policy', id: pid, anchor: ch.section }], sourceRef: a.ref,
+          workflowId: wf ? wf.id : null, workflow: wf ? wf.name : null });
         n++;
       }
       s.sent = true;
     });
-    this._log('Sent for approval', (p ? p.name : pid) + ' · ' + n + ' change' + (n === 1 ? '' : 's'));
-    App.toast(n ? (n + ' change' + (n === 1 ? '' : 's') + ' sent to Approvals') : 'Already sent for approval', n ? 'ok' : 'warn');
+    this._log('Sent for approval', (p ? p.name : pid) + ' · ' + n + ' change' + (n === 1 ? '' : 's') + (wf ? ' · ' + wf.name : ''));
+    if (App.state.route === 'regulatory') App.closeModal();
+    App.toast(n ? (n + ' change' + (n === 1 ? '' : 's') + ' sent' + (wf ? ' via ' + wf.name : ' to Approvals')) : 'Already sent for approval', n ? 'ok' : 'warn');
     this._syncStep();
   },
 

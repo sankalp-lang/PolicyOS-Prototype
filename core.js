@@ -322,12 +322,13 @@ window.App = (function () {
   /* ---------------- nav model (role-aware) ---------------- */
   function navModel(user) {
     if (user.role === 'user') {
-      return { pinned: [ { id:'dashboard', label:'Home', icon:'home' }, { id:'copilot', label:'Ask Tara', icon:'sparkles', tag:'AI' } ],
+      return { pinned: [ { id:'dashboard', label:'Home', icon:'home' } ],
         groups: [
           { title:'Company Brain', items:[ {id:'policies',label:'Policies',icon:'file'}, {id:'polygpt',label:'PolyGPT',icon:'chat'}, {id:'assessments',label:'My Assessments',icon:'clipboard'} ] }
         ] };
     }
-    const pinned = [ { id:'dashboard', label:'Dashboard', icon:'home' }, { id:'copilot', label:'Ask Tara', icon:'sparkles', tag:'AI' } ];
+    // Ask Tara has no sidebar entry - it's the floating launcher (bottom-right), reachable from anywhere.
+    const pinned = [ { id:'dashboard', label:'Dashboard', icon:'home' } ];
     // Company Brain: the policy knowledge surface - Policies live here, alongside Assessments
     const brain = [ { id:'policies', label:'Policies', icon:'file' } ];
     if (user.role==='policy_manager'||user.role==='admin'||user.role==='assessment_manager') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
@@ -385,8 +386,6 @@ window.App = (function () {
             <button class="topbar__btn" onclick="App.toggleSidebar()" title="Toggle sidebar">${App.icon('menu')}</button>
             <div id="tbTitle" class="topbar__title"></div>
             <div class="topbar__spacer"></div>
-            <button class="topbar__btn" onclick="App.cmd.open()" title="Command (⌘K)">${App.icon('command')}</button>
-            <button class="topbar__btn" title="Notifications">${App.icon('bell')}</button>
             <div style="position:relative">
               <button class="userchip" onclick="App.toggleUserMenu(event)">
                 ${App.ui.avatar(u)}

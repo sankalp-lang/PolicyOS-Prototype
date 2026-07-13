@@ -216,17 +216,20 @@ App.approvalsView = {
       ? `<div class="field" style="margin-top:14px;margin-bottom:0"><label>Source documents - open at the cited page</label><div class="row gap-8 wrap">${a.citations.map(ct => App.pdf.cite(ct.kind, ct.id, ct.anchor, ct.kind === 'circular' ? ('Circular ' + (a.sourceRef || '')) : null)).join('')}</div></div>`
       : '';
 
+    // prefer the request's own stages (chosen at upload) over the category default workflow
+    const chain = (a.stages && a.stages.length) ? a.stages : (wf ? wf.levels : null);
+    const chainName = (a.stages && a.stages.length) ? (a.workflow || 'Custom workflow') : (wf ? wf.name : '');
     let levels = '';
-    if (wf) {
-      const lv = wf.levels.map(l => {
-        const approvers = l.users.map(uid => { const e = App.emp(uid); return `<div class="minirow">${App.ui.avatar(e,'sm')}<div style="flex:1"><b style="font-weight:600">${App.esc(e.name)}</b> <span class="muted" style="font-size:12px">· ${App.esc(e.title)}</span></div></div>`; }).join('');
+    if (chain) {
+      const lv = chain.map(l => {
+        const approvers = (l.users || []).map(uid => { const e = App.emp(uid); return `<div class="minirow">${e ? App.ui.avatar(e,'sm') : ''}<div style="flex:1"><b style="font-weight:600">${App.esc(e ? e.name : uid)}</b> <span class="muted" style="font-size:12px">· ${App.esc(e ? e.title : '')}</span></div></div>`; }).join('');
         const cls = a.status.includes('L'+l.n) ? 'is-active' : (a.status.includes('L2') && l.n === 1 ? 'is-done' : '');
         return `<div style="margin-bottom:12px">
-          <div class="row gap-8" style="margin-bottom:6px"><span class="step ${cls}"><span class="step__num">${cls==='is-done'?'✓':l.n}</span> Level ${l.n}</span><span class="tag">${l.criteria==='All'?'All must approve':l.criteria==='Anyone'?'Anyone can approve':'Custom rule'}</span></div>
+          <div class="row gap-8" style="margin-bottom:6px"><span class="step ${cls}"><span class="step__num">${cls==='is-done'?'✓':l.n}</span> Stage ${l.n}</span><span class="tag">${l.criteria==='All'?'All must approve':l.criteria==='Anyone'?'Anyone can approve':'Custom rule'}</span></div>
           ${approvers}
         </div>`;
       }).join('');
-      levels = `<div class="divider"></div><b style="font-size:12.5px">Approval chain · ${App.esc(wf.name)}</b><div class="mt-8">${lv}</div>`;
+      levels = `<div class="divider"></div><b style="font-size:12.5px">Approval chain${chainName?' · '+App.esc(chainName):''}</b><div class="mt-8">${lv}</div>`;
     }
 
     const footer = `<div class="spacer" style="flex:1"></div>`

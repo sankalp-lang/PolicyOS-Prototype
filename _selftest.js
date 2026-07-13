@@ -366,6 +366,25 @@ chk(/Policy Management/.test(_polHtml) && /Manage, view, and edit/.test(_polHtml
 chk(/Policy Owner/.test(_polHtml) && /Sub Category/.test(_polHtml) && /Created On/.test(_polHtml) && /Last Modified On/.test(_polHtml) && /Policy Name/.test(_polHtml), 'Policies: production columns present (Owner/Sub Category/Created/Last Modified)');
 chk(typeof App.policiesView.toggleFilter==='function' && typeof App.policiesView.toggleAll==='function', 'Policies: filter toggle + select-all present');
 
+// Add policy → choose approval workflow + confirm/edit its stages → routes to Approvals
+App.state.user = admin;
+var _ap0 = DB.approvals.length;
+App.policiesView.add();
+App.state.addPolicy.details = { name:'Gold Loan Policy', category:'Lending', sub:'Gold Loan', desc:'New secured gold loan.' };
+App.policiesView._loadWf('WF1');
+chk(App.state.addPolicy.stages.length>=1 && App.state.addPolicy.stages.every(function(s){return Array.isArray(s.approvers) && (s.criteria==='All'||s.criteria==='Anyone');}), 'AddPolicy: choosing a workflow loads editable stages (approvers + All/Anyone)');
+App.policiesView._addAddStage();
+chk(App.state.addPolicy.stages.length>=2, 'AddPolicy: reviewer can add an approval stage');
+App.policiesView._addSetCrit(0,'All'); chk(App.state.addPolicy.stages[0].criteria==='All', 'AddPolicy: stage criteria toggles All / Anyone');
+App.state.addPolicy.stages.forEach(function(s){ if(!s.approvers.length) s.approvers.push('THQ0144'); });
+App.policiesView._addSubmit();
+chk(DB.approvals.length===_ap0+1, 'AddPolicy: submit routes a New Policy request into Approvals');
+var _req = DB.approvals[0];
+chk(_req.type==='New Policy' && _req.status==='Pending L1' && Array.isArray(_req.stages) && _req.stages.length>=2 && !!_req.workflow, 'AddPolicy: request carries the chosen workflow + its stages, starting at stage 1');
+var _apErr=null; try { App.approvalsView.open(_req.id); App.closeModal(); } catch(e){ _apErr=e; }
+chk(!_apErr, 'Approvals: New Policy request detail renders its custom stages (null policy safe): '+(_apErr||''));
+DB.approvals.shift(); App.state.addPolicy = null; App.state.user = admin;
+
 // Guided product tour (role-aware spotlight walkthrough)
 chk(typeof App.tour === 'object' && typeof App.tour.start === 'function', 'Tour: engine present');
 chk(Array.isArray(App.tour.stepsFor(admin)) && App.tour.stepsFor(admin).length >= 5, 'Tour: admin gets a role-aware step list');

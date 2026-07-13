@@ -9,6 +9,7 @@ App.registerView('insightgen', {
         <select class="select" id="igDb" onchange="App.insightgenView.setDb(this.value)">
           ${App.insightgenView.DBS.map(d=>`<option value="${App.esc(d)}" ${d===s.db?'selected':''}>${App.esc(d)}</option>`).join('')}
         </select>
+        <button class="btn btn--primary" onclick="App.insightgenView.addSource()">${App.icon('plus')} Add data source</button>
       </div>
       <div class="info-banner">${App.icon('database')} <span>Querying <strong id="igDbLabel">${App.esc(s.db)}</strong> · read-only analytics replica. Generated SQL is shown for every answer - nothing runs against production.</span></div>
       <div class="tabs">
@@ -25,6 +26,59 @@ App.registerView('insightgen', {
 
 App.insightgenView = {
   DBS: ['Loan Against Property', 'Personal Loan Book'],
+
+  /* ---------- connect more databases / warehouses, or upload a file (read-only) ---------- */
+  addSource() {
+    const card = (ic, t, d, fn) => `<button class="actioncard" onclick="${fn}"><span class="actioncard__ic" style="background:var(--brand-50);color:var(--brand-600)">${App.icon(ic)}</span><div><b>${t}</b><span>${d}</span></div></button>`;
+    App.openModal({
+      title: 'Add a data source', sub: 'Point InsightGen at another database or upload a file. Read-only - nothing is ever written back.', lg: true,
+      body: `<div class="grid grid-2" style="gap:10px">
+          ${card('database', 'PostgreSQL', 'Connect a Postgres database', "App.insightgenView._connectSource('PostgreSQL')")}
+          ${card('database', 'MySQL', 'Connect a MySQL / MariaDB database', "App.insightgenView._connectSource('MySQL')")}
+          ${card('database', 'MongoDB', 'Connect a MongoDB collection', "App.insightgenView._connectSource('MongoDB')")}
+          ${card('database', 'SQL Server', 'Connect a Microsoft SQL Server DB', "App.insightgenView._connectSource('SQL Server')")}
+          ${card('layers', 'Data warehouse', 'Snowflake · BigQuery · Redshift', "App.insightgenView._connectSource('Warehouse')")}
+          ${card('download', 'Upload a file', 'CSV or Excel (≤ 50 MB)', 'App.insightgenView._uploadSource()')}
+        </div>
+        <div class="info-banner" style="margin-top:14px;margin-bottom:0">${App.icon('lock')} <span>Connect with a <strong>read-only</strong> user. Credentials stay on your infrastructure - InsightGen only reads, and shows the SQL for every answer.</span></div>`,
+      footer: `<button class="btn" onclick="App.closeModal()">Close</button>`
+    });
+  },
+  _connectSource(type) {
+    const isMongo = type === 'MongoDB';
+    const portHint = type === 'PostgreSQL' ? 'db.internal:5432' : type === 'MySQL' ? 'db.internal:3306' : isMongo ? 'mongodb://db.internal:27017' : type === 'SQL Server' ? 'db.internal:1433' : 'account.region.snowflakecomputing.com';
+    App.openModal({
+      title: 'Connect ' + type, sub: 'Read-only connection. Generated SQL is shown for every answer; nothing runs against production.',
+      body: `<div class="field"><label>Connection name <span class="req">*</span></label><input class="input" id="dsName" placeholder="e.g. Collections replica"/></div>
+        <div class="grid grid-2">
+          <div class="field"><label>Host</label><input class="input" placeholder="${App.esc(portHint)}"/></div>
+          <div class="field"><label>${isMongo ? 'Database / collection' : 'Database / schema'}</label><input class="input" placeholder="analytics"/></div>
+        </div>
+        <div class="field" style="margin-bottom:0"><label>Read-only user</label><input class="input" placeholder="insightgen_ro"/></div>
+        <div class="info-banner" style="margin-top:14px;margin-bottom:0">${App.icon('lock')} <span>Use a read-only role. Do not paste production write credentials here.</span></div>`,
+      footer: `<button class="btn" onclick="App.insightgenView.addSource()">${App.icon('arrow')} Back</button><button class="btn btn--primary" onclick="App.insightgenView._doConnect('${type}')">${App.icon('plug')} Connect</button>`
+    });
+    setTimeout(() => { const i = document.getElementById('dsName'); if (i) i.focus(); }, 80);
+  },
+  _uploadSource() {
+    App.openModal({
+      title: 'Upload a dataset', sub: 'CSV or Excel - parsed into a queryable table.',
+      body: `<div class="field"><label>Dataset name <span class="req">*</span></label><input class="input" id="dsName" placeholder="e.g. Q2 disbursals export"/></div>
+        <div class="field" style="margin-bottom:0"><label>File</label><div class="pdf-ph" style="min-height:auto;padding:22px;text-align:center;cursor:pointer">${App.icon('download')}<div class="muted" style="margin-top:8px;font-size:12.5px">Click to upload CSV / Excel (≤ 50 MB)</div></div></div>`,
+      footer: `<button class="btn" onclick="App.insightgenView.addSource()">${App.icon('arrow')} Back</button><button class="btn btn--primary" onclick="App.insightgenView._doConnect('Upload')">${App.icon('check')} Add dataset</button>`
+    });
+    setTimeout(() => { const i = document.getElementById('dsName'); if (i) i.focus(); }, 80);
+  },
+  _doConnect(type) {
+    const raw = ((document.getElementById('dsName') || {}).value || '').trim();
+    if (!raw) { App.toast('Give the source a name', 'warn'); return; }
+    if (App.insightgenView.DBS.indexOf(raw) < 0) App.insightgenView.DBS.push(raw);
+    App.insightgenView._state().db = raw;
+    App.closeModal();
+    App.toast((type === 'Upload' ? 'Dataset added' : type + ' connected') + ' · “' + raw + '” is now queryable (demo)', 'ok');
+    App.reload();
+  },
+
   CHIPS: [
     'Top reasons for application rejection',
     'NPA rate by product',

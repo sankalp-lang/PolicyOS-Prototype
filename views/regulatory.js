@@ -259,6 +259,7 @@ App.regulatoryView = {
         <span class="muted" style="font-size:13px" id="regProg">${this._progText(chs)}</span>
         <div style="flex:1"></div>
         <button class="btn btn--sm" onclick="App.regulatoryView._auditModal()">${App.icon('clipboard')} Audit log</button>
+        ${(App.sim && App.sim.paramsFor(pid)) ? `<button class="btn btn--sm" onclick="App.regulatoryView._simulate()">${App.icon('chart')} Simulate impact</button>` : ''}
         <button class="btn btn--sm" onclick="App.regulatoryView._downloadPdf()">${App.icon('download')} Download PDF</button>
         <button class="btn btn--sm" onclick="App.regulatoryView._downloadWord()">${App.icon('download')} Download Word</button>
         <button class="btn btn--sm btn--primary" onclick="App.regulatoryView._sendApproval()">${App.icon('send')} Send for approval</button>
@@ -413,6 +414,19 @@ App.regulatoryView = {
       }
     } catch (e) {}
     App.toast('Opening print view - Save as PDF, sign, then submit to your approval workflow', 'ok');
+  },
+  /* impact of the regulatory changes on the test cohort: merge sim overrides from every change that is NOT rejected */
+  _simOverride(pid) {
+    const ov = {};
+    this._changesForPolicy(pid).forEach(c => { if (c.sim && this.st(c.id).status !== 'rejected') Object.assign(ov, c.sim); });
+    return ov;
+  },
+  _simulate() {
+    const pid = this.editor.policyId; const p = App.policy(pid);
+    if (!App.simView || !App.sim || !App.sim.paramsFor(pid)) { App.toast('This policy is not simulable', 'warn'); return; }
+    const ov = this._simOverride(pid);
+    this._log('Simulated impact', (p ? p.name : pid) + ' · regulatory change applied');
+    App.simView.open(pid, ov, 'Regulatory impact');
   },
   /* Send for approval → first pick the approval workflow (from Approvals › Manage Workflows),
      so the change follows a defined level-by-level maker-checker chain. */

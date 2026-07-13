@@ -385,6 +385,27 @@ var _apErr=null; try { App.approvalsView.open(_req.id); App.closeModal(); } catc
 chk(!_apErr, 'Approvals: New Policy request detail renders its custom stages (null policy safe): '+(_apErr||''));
 DB.approvals.shift(); App.state.addPolicy = null; App.state.user = admin;
 
+// Regulatory editor: "Simulate impact" of the regulatory change, beside Download PDF
+App.state.user = admin; App.regulatoryView.editor = null; App.regulatoryView._st = {};
+App.regulatoryView.openEditor('P-PL');
+var _regEd = App.regulatoryView._renderEditor();
+chk(/Simulate impact/.test(_regEd) && _regEd.indexOf('Simulate impact') < _regEd.indexOf('Download PDF'), 'Regulatory: Simulate-impact button sits beside Download PDF (simulable policy)');
+chk(typeof App.regulatoryView._simulate==='function' && typeof App.regulatoryView._simOverride==='function', 'Regulatory: simulate handler + override merge present');
+var _ov = App.regulatoryView._simOverride('P-PL');
+chk(_ov && (_ov.minCibil || _ov.maxFoir), 'Regulatory: sim override merges the (non-rejected) regulatory changes');
+App.regulatoryView.openEditor('P-KYC');
+chk(!/Simulate impact/.test(App.regulatoryView._renderEditor()), 'Regulatory: no Simulate button for a non-simulable policy (KYC)');
+App.regulatoryView.editor = null; App.regulatoryView._st = {};
+
+// InsightGen: add / connect more data sources (SQL / Postgres / Mongo / warehouse / upload)
+App.state.user = admin;
+chk(/Add data source/.test(App.views['insightgen'].render({user:admin})), 'InsightGen: "Add data source" control present');
+chk(typeof App.insightgenView.addSource==='function' && typeof App.insightgenView._connectSource==='function' && typeof App.insightgenView._doConnect==='function', 'InsightGen: connect-source handlers present');
+var _db0 = App.insightgenView.DBS.length;
+App.insightgenView._state();
+(function(){ var g=document.getElementById; document.getElementById=function(id){ return id==='dsName'?{value:'Collections replica'}:g.call(document,id); }; App.insightgenView._doConnect('PostgreSQL'); document.getElementById=g; })();
+chk(App.insightgenView.DBS.length===_db0+1 && App.insightgenView.DBS.indexOf('Collections replica')>=0, 'InsightGen: connecting a source adds it to the queryable databases');
+
 // Guided product tour (role-aware spotlight walkthrough)
 chk(typeof App.tour === 'object' && typeof App.tour.start === 'function', 'Tour: engine present');
 chk(Array.isArray(App.tour.stepsFor(admin)) && App.tour.stepsFor(admin).length >= 5, 'Tour: admin gets a role-aware step list');

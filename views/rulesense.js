@@ -2,6 +2,7 @@
 App.registerView('rulesense', {
   title: 'RuleSense AI',
   render(ctx) {
+    if (!App.canAccessView('rulesense', ctx.user)) return App.lockedPage('RuleSense AI', 'RuleSense is for administrators and policy managers.');
     const u = ctx.user;
     const vis = App.visiblePolicies(u);
 
@@ -35,6 +36,7 @@ App.registerView('rulesense', {
           <b>${App.esc(p.name)}</b>
           <span>${App.esc(p.category)} · ${App.esc(p.sub)} · <span class="mono">${p.version}</span></span>
           <div class="row gap-6 mt-8" style="flex-wrap:wrap">
+            ${App.ui.statusPill(p.status)}
             ${ruleCount ? App.ui.pill(ruleCount + ' rule' + (ruleCount > 1 ? 's' : ''), 'violet') : App.ui.pill('No rules yet', 'gray')}
             ${App.ui.pill('Owner: ' + owner.name, 'gray')}
           </div>
@@ -60,11 +62,22 @@ App.rulesenseView = {
   st() { return App.state.rulesense || (App.state.rulesense = { policy: null, tab: 'rules', step: 1 }); },
   cur() { return App.policy(this.st().policy); },
 
+  /* version trail + rule-by-rule compare now live in App.versions (shared with the Policies table) */
+
   /* ---------- loosely parse "IF ... THEN ..." rule strings ---------- */
+  _triggerFor(cond, action) {
+    const s = (cond + ' ' + action).toLowerCase();
+    if (/dpd|bucket|legal|recovery/.test(s)) return 'On repayment event';
+    if (/pep|str|kyc|due_diligence|flagged/.test(s)) return 'On onboarding / periodic review';
+    if (/device|incident|unmanaged/.test(s)) return 'On device / security event';
+    if (/leave|certificate/.test(s)) return 'On leave request';
+    if (/expense|international/.test(s)) return 'On expense claim';
+    return 'On application evaluation';
+  },
   parseRule(r) {
     const m = /^\s*if\s+(.*?)\s+then\s+(.*)$/i.exec(r || '');
-    if (m) return { condition: m[1].trim(), action: m[2].trim(), trigger: 'On application evaluation' };
-    return { condition: r, action: 'Apply policy outcome', trigger: 'On application evaluation' };
+    const condition = m ? m[1].trim() : r, action = m ? m[2].trim() : 'Apply policy outcome';
+    return { condition, action, trigger: this._triggerFor(condition, action) };
   },
 
   /* humanize a condition fragment into a readable requirement */
@@ -132,6 +145,7 @@ App.rulesenseView = {
   rulesTabHtml(p) {
     const rules = p.rules || [];
     if (!rules.length) return App.ui.empty('code', 'No rules extracted yet', 'RuleSense found no machine-readable logic in this policy. Add requirements manually or re-run extraction.');
+    const ro = App.currentUser() && App.currentUser().role === 'user';   // staff use is read-only
     const items = rules.map((r, i) => {
       const pr = this.parseRule(r);
       return `<div class="minirow">
@@ -140,10 +154,10 @@ App.rulesenseView = {
           <b style="font-weight:600">${App.esc(this.humanize(pr.condition))}</b>
           <div class="muted" style="font-size:12px;margin-top:2px">→ ${App.esc(this.humanize(pr.action))}</div>
         </div>
-        <button class="btn btn--sm btn--ghost" onclick="App.rulesenseView.editRule(${i})">${App.icon('edit')}</button>
+        ${ro ? '' : `<button class="btn btn--sm btn--ghost" onclick="App.rulesenseView.editRule(${i})">${App.icon('edit')}</button>`}
       </div>`;
     }).join('');
-    return `<div class="card"><div class="card__head">${App.icon('shield')}<h3>Extracted requirements</h3><div class="spacer"></div><span class="muted" style="font-size:12px">${rules.length} rule${rules.length > 1 ? 's' : ''} · editable</span></div>
+    return `<div class="card"><div class="card__head">${App.icon('shield')}<h3>Extracted requirements</h3><div class="spacer"></div><span class="muted" style="font-size:12px">${rules.length} rule${rules.length > 1 ? 's' : ''}${ro ? '' : ' · editable'}</span></div>
       <div class="card__body">${items}</div></div>`;
   },
 
@@ -212,8 +226,15 @@ App.rulesenseView = {
 
       <div class="row gap-8 mb-16" style="flex-wrap:wrap">
         <span class="pill pill--violet">${App.icon('file')} ${App.esc(p.name)}</span>
-        <span class="pill pill--gray"><span class="mono">${App.esc(p.version)}</span></span>
         <span class="pill pill--gray">${App.esc(p.category)} · ${App.esc(p.sub)}</span>
+        ${App.ui.statusPill(p.status)}
+      </div>
+
+      <div class="row gap-8 mb-16" style="flex-wrap:wrap;align-items:center">
+        <span class="login__label" style="margin:0">Versions</span>
+        ${App.versions ? App.versions.chipsHtml(p.id) : ''}
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn btn--sm" onclick="App.versions.open('${p.id}')">${App.icon('layers')} Compare versions</button>
       </div>
 
       ${this.stepperHtml()}
@@ -222,13 +243,15 @@ App.rulesenseView = {
       <div id="rsTabBody">${this.tabBody(p)}</div>
 
       <div class="divider"></div>
-      <div class="row gap-8" style="flex-wrap:wrap">
+      ${u.role === 'user'
+        ? `<div class="info-banner" style="margin-bottom:0">${App.icon('eye')} <span><strong>Read-only.</strong> You can review the extracted rules and the generated logic for policies you can access. Editing rules and pushing to the engine is for policy managers and admins.</span></div>`
+        : `<div class="row gap-8" style="flex-wrap:wrap">
         <button class="btn" onclick="App.rulesenseView.testLogic()">${App.icon('zap')} Test Logic</button>
         <button class="btn" onclick="App.rulesenseView.reviewVariables()">${App.icon('database')} Review Variables</button>
         ${App.sim && App.sim.paramsFor(p.id) ? `<button class="btn" onclick="App.simView.open('${p.id}')">${App.icon('chart')} Simulate impact</button>` : ''}
         <div class="spacer" style="flex:1"></div>
         <button class="btn btn--primary" onclick="App.rulesenseView.initiateBre()">${App.icon('code')} Initiate BRE Update</button>
-      </div>`;
+      </div>`}`;
   },
 
   /* re-render the editor in place (keeps state) */
@@ -286,34 +309,48 @@ App.rulesenseView = {
         <td><span class="mono" style="font-size:12.5px">${App.esc(m.src)}</span></td>
         <td>${App.icon('arrow')}</td>
         <td><span class="mono" style="font-size:12.5px">${m.dest ? App.esc(m.dest) : '-'}</span></td>
+        <td>${m.dest ? `<span class="tag">${App.esc(m.type || 'string')}</span>` : '<span class="muted">-</span>'}</td>
+        <td class="muted" style="font-size:12px">${m.dest ? App.esc(m.desc || '') : '-'}</td>
         <td>${m.dest ? App.ui.pill('Mapped', 'green') : App.ui.pill('Unmapped', 'amber')}</td>
       </tr>`).join('');
     App.openModal({
       title: 'Review Variables',
       sub: 'Source fields mapped to BRE input variables for ' + (p ? p.name : 'this policy') + '.',
-      body: `<div class="table-wrap"><table class="tbl"><thead><tr><th>Source field</th><th></th><th>BRE variable</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
+      body: `<div class="table-wrap"><table class="tbl"><thead><tr><th>Source field</th><th></th><th>BRE variable</th><th>Data type</th><th>Description</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>
         <div class="info-banner mt-16" style="margin-bottom:0">${App.icon('info')} <span>Unmapped fields fall back to the default resolver. Map them to a verified source (Keka / bureau pull) for deterministic evaluation.</span></div>`,
       footer: `<button class="btn" onclick="App.closeModal()">Close</button>
         <button class="btn btn--primary" onclick="App.closeModal();App.toast('Variable mapping saved (demo)')">Save mapping</button>`
     });
   },
 
-  /* derive a source→destination variable map from policy facts/rules */
+  /* derive a source→destination variable map from policy facts/rules (dest + data type + description, as in production) */
   varMap(p) {
     const dict = {
-      cibil_score: 'bureauScore', cibil: 'bureauScore', cmr: 'bureauCmr',
-      age: 'applicantAge', foir: 'foirRatio', monthly_income: 'monthlyIncome',
-      ltv: 'loanToValue', business_vintage_years: 'businessVintage', promoter_age: 'promoterAge',
-      gst_turnover: 'gstTurnover', dpd: 'daysPastDue', customer_pep: 'isPep',
-      level: 'jobLevel', increment: 'incrementPct', leave_balance: 'leaveBalance', expense: 'claimAmount'
+      cibil_score: ['bureauScore', 'number', 'Bureau credit score (300-900) from the latest CIBIL pull'],
+      cibil: ['bureauScore', 'number', 'Bureau credit score (300-900) from the latest CIBIL pull'],
+      cmr: ['bureauCmr', 'number', 'CIBIL MSME Rank for business applicants (1-10)'],
+      age: ['applicantAge', 'number', 'Applicant age in completed years at application date'],
+      foir: ['foirRatio', 'decimal', 'Fixed-obligation-to-income ratio incl. the proposed EMI'],
+      monthly_income: ['monthlyIncome', 'number', 'Verified net monthly income (bank/payslip)'],
+      ltv: ['loanToValue', 'decimal', 'Loan amount over asset value at sanction'],
+      business_vintage_years: ['businessVintage', 'number', 'Years since business incorporation/registration'],
+      promoter_age: ['promoterAge', 'number', 'Primary promoter age in completed years'],
+      gst_turnover: ['gstTurnover', 'number', 'Trailing 12-month turnover from GST returns'],
+      dpd: ['daysPastDue', 'number', 'Days past due on the account'],
+      customer_pep: ['isPep', 'boolean', 'Politically-exposed-person screening flag'],
+      leave_balance: ['leaveBalance', 'number', 'Accrued leave balance in days'],
+      expense: ['claimAmount', 'number', 'Claimed expense amount in INR']
     };
     const found = new Set();
     (p && p.rules || []).forEach(r => {
       const cond = this.parseRule(r).condition;
       Object.keys(dict).forEach(k => { if (new RegExp('\\b' + k + '\\b', 'i').test(cond)) found.add(k); });
     });
-    let list = Array.from(found).map(k => ({ src: k, dest: dict[k] }));
-    if (!list.length) list = [{ src: 'cibil_score', dest: 'bureauScore' }, { src: 'monthly_income', dest: 'monthlyIncome' }];
+    let list = Array.from(found).map(k => ({ src: k, dest: dict[k][0], type: dict[k][1], desc: dict[k][2] }));
+    if (!list.length) list = [
+      { src: 'cibil_score', dest: 'bureauScore', type: 'number', desc: dict.cibil_score[2] },
+      { src: 'monthly_income', dest: 'monthlyIncome', type: 'number', desc: dict.monthly_income[2] }
+    ];
     // always show one unmapped to illustrate the state
     list.push({ src: 'employment_tenure', dest: null });
     return list;
@@ -335,7 +372,7 @@ App.rulesenseView = {
       lg: true,
       body: `<div class="grid grid-2" style="margin-bottom:16px">
           <div class="field" style="margin:0"><label>Code Language</label>
-            <select class="select" id="rsLang" style="width:100%"><option>JSONata</option><option>Drools (DRL)</option><option>Python</option></select>
+            <select class="select" id="rsLang" style="width:100%"><option>JSONata</option><option>Drools (DRL)</option><option>Python</option><option>Java</option></select>
           </div>
           <div class="field" style="margin:0"><label>Target environment</label>
             <select class="select" style="width:100%"><option>Staging</option><option>Production (post-approval)</option></select>
@@ -361,7 +398,8 @@ App.rulesenseView = {
     codeHost.innerHTML = '';
     status.style.display = 'flex';
 
-    const stages = ['Analysing rules', 'Understanding policy intent', 'Generating JSONata', 'Validating expression', 'Finalizing'];
+    const langSel0 = document.getElementById('rsLang'); const lang0 = langSel0 ? langSel0.value : 'JSONata';
+    const stages = ['Analysing rules', 'Understanding policy intent', 'Generating ' + lang0, 'Validating expression', 'Finalizing'];
     let i = 0;
     const tick = () => {
       if (i < stages.length) {
@@ -369,11 +407,13 @@ App.rulesenseView = {
         i++;
         setTimeout(tick, 620);
       } else {
-        status.innerHTML = App.icon('check') + ' <span><strong>Code generated.</strong> JSONata expression validated against the policy schema.</span>';
+        status.innerHTML = App.icon('check') + ' <span><strong>Code generated.</strong> ' + App.esc(lang0) + ' output validated against the policy schema.</span>';
         if (btn) { btn.disabled = false; btn.innerHTML = App.icon('zap') + ' Regenerate'; }
-        codeHost.innerHTML = `<pre class="code" id="rsCode">${App.rulesenseView.jsonataFor(p)}</pre>
+        const langSel = document.getElementById('rsLang'); const lang = langSel ? langSel.value : 'JSONata';
+        codeHost.innerHTML = `<pre class="code" id="rsCode">${App.rulesenseView.codeFor(p, lang)}</pre>
           <div class="row gap-8 mt-12">
             <button class="btn btn--sm" onclick="App.rulesenseView.copyCode()">${App.icon('clipboard')} Copy</button>
+            <button class="btn btn--sm" onclick="App.toast('Running generated code against the sample cohort (demo)')">${App.icon('zap')} Test Code</button>
             <div class="spacer" style="flex:1"></div>
             <button class="btn btn--sm btn--primary" onclick="App.closeModal();App.toast('BRE update submitted for approval (demo)')">${App.icon('send')} Submit for approval</button>
           </div>`;
@@ -390,6 +430,40 @@ App.rulesenseView = {
     } else {
       App.toast('JSONata copied to clipboard');
     }
+  },
+
+  /* dispatch code generation by the language chosen in the modal (mirrors production CodeLanguage enum) */
+  codeFor(p, lang) {
+    const l = String(lang || 'JSONata').toLowerCase();
+    if (l.indexOf('drools') >= 0) return this.droolsFor(p);
+    if (l.indexOf('python') >= 0) return this.pythonFor(p);
+    if (l.indexOf('java') >= 0) return this.javaFor(p);
+    return this.jsonataFor(p);
+  },
+  // simple readable generators for the non-JSONata targets (demo-grade, from the same parsed rules)
+  _plainConds(p) {
+    return (p && p.rules || []).map(r => { const pr = this.parseRule(r); return { cond: pr.condition, action: pr.action }; });
+  },
+  droolsFor(p) {
+    const C = s => `<span class="c">${App.esc(s)}</span>`;
+    const K = s => `<span class="k">${s}</span>`;
+    const rules = this._plainConds(p).map((r, i) =>
+      `${K('rule')} "${App.esc(p.name)} #${i + 1}"\n${K('when')}\n    $a : Application( ${App.esc(r.cond.replace(/\bor\b/gi, '||').replace(/\band\b/gi, '&&'))} )\n${K('then')}\n    $a.setDecision("${App.esc(r.action.replace(/"/g, ''))}");\n${K('end')}`).join('\n\n');
+    return C('// RuleSense → Drools (DRL) · ' + p.name + ' (' + p.version + ')') + '\n' + K('package') + ' com.tartan.bre;\n\n' + rules;
+  },
+  pythonFor(p) {
+    const C = s => `<span class="c">${App.esc(s)}</span>`;
+    const K = s => `<span class="k">${s}</span>`;
+    const lines = this._plainConds(p).map(r =>
+      `    ${K('if')} ${App.esc(r.cond.replace(/\bOR\b/gi, 'or').replace(/\bAND\b/gi, 'and').replace(/\s=\s/g, ' == '))}:\n        ${K('return')} "${App.esc(r.action.replace(/"/g, ''))}"`).join('\n');
+    return C('# RuleSense → Python · ' + p.name + ' (' + p.version + ')') + `\n${K('def')} decide(application):\n${lines}\n    ${K('return')} "approve"`;
+  },
+  javaFor(p) {
+    const C = s => `<span class="c">${App.esc(s)}</span>`;
+    const K = s => `<span class="k">${s}</span>`;
+    const lines = this._plainConds(p).map(r =>
+      `        ${K('if')} (${App.esc(r.cond.replace(/\bor\b/gi, ' || ').replace(/\band\b/gi, ' && ').replace(/\s=\s/g, ' == '))}) ${K('return')} "${App.esc(r.action.replace(/"/g, ''))}";`).join('\n');
+    return C('// RuleSense → Java · ' + p.name + ' (' + p.version + ')') + `\n${K('public class')} ${p.id.replace(/-/g, '')}Policy {\n    ${K('public String')} decide(Application application) {\n${lines}\n        ${K('return')} "approve";\n    }\n}`;
   },
 
   /* build a plausible JSONata expression from the policy's rules/facts */

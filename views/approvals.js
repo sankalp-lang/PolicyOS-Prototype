@@ -3,6 +3,7 @@ App.registerView('approvals', {
   title: 'Approvals',
   render(ctx) {
     const u = ctx.user;
+    if (!App.canAccessView('approvals', u)) return App.lockedPage('Approvals', 'Approvals are for administrators and policy managers.');
     if (!App.state.approvals) App.state.approvals = { mode: 'requests' };
     const mode = App.state.approvals.mode;
 
@@ -38,7 +39,7 @@ App.approvalsView = {
   prioPill(p) { return App.ui.pill(p, p === 'High' ? 'red' : p === 'Medium' ? 'amber' : 'gray', true); },
 
   // can this user act on (approve/reject) requests? makers + admins; staff users only view
-  canAct(u) { return u.role === 'admin' || u.role === 'policy_manager' || u.role === 'risk_approver'; },
+  canAct(u) { return u.role === 'admin' || u.role === 'policy_manager'; },
 
   // workflow that governs a given policy category
   workflowFor(cat) { return DB.workflows.find(w => w.category === cat); },
@@ -228,9 +229,7 @@ App.approvalsView = {
       levels = `<div class="divider"></div><b style="font-size:12.5px">Approval chain · ${App.esc(wf.name)}</b><div class="mt-8">${lv}</div>`;
     }
 
-    const askName = (a.name || '').replace(/'/g, '');
-    const footer = `<button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('What if we set ${App.esc((a.change.field||'').replace(/'/g,''))} to ${App.esc((a.change.to||'').replace(/'/g,''))} on the ${App.esc((p?p.name:'policy').replace(/'/g,''))}?')">${App.icon('sparkles')} Ask Tara about impact</button>
-      <div class="spacer" style="flex:1"></div>`
+    const footer = `<div class="spacer" style="flex:1"></div>`
       + (canAct
           ? `<button class="btn btn--danger" onclick="App.approvalsView.reject('${a.id}')">${App.icon('x')} Reject</button><button class="btn btn--primary" onclick="App.closeModal();App.toast('Approved · ${App.esc(a.id)} advanced to next level (demo)')">${App.icon('check')} Approve</button>`
           : `<span class="pill pill--gray" style="align-self:center">${App.icon('lock')} ${u.id===a.requestedBy?'You raised this - cannot self-approve':'View only'}</span>`);

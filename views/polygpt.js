@@ -1,10 +1,10 @@
 /* PolyGPT - dedicated, permission-faithful policy Q&A chat.
-   Mirrors the Ask Tara (copilot) surface, but scoped to one or more
-   policies you explicitly attach. Only policies your role can view are
-   selectable; answers come from App.askTara so RBAC is enforced at retrieval. */
+   Scoped to one or more policies you explicitly attach. Only policies your role
+   can view are selectable; answers come from App.askTara so RBAC is enforced at retrieval. */
 App.registerView('polygpt', {
   title: 'PolyGPT',
   render(ctx) {
+    if (!App.canAccessView('polygpt', ctx.user)) return App.lockedPage('PolyGPT', 'PolyGPT is for administrators and policy managers. Staff can ask from the Home Ask bar.');
     if (!App.state.polygpt) App.state.polygpt = [];
     if (!App.state.polygptSel) App.state.polygptSel = [];
     const u = ctx.user;
@@ -13,29 +13,29 @@ App.registerView('polygpt', {
     // keep any stale selections honest (a persona switch can shrink visibility)
     App.state.polygptSel = App.state.polygptSel.filter(id => vis.some(p => p.id === id));
 
-    const prompts = [
-      { q:'What are the borrower age criteria for the MSME policy?', ic:'file' },
-      { q:'Brief me about the two-wheeler loan policy', ic:'branch' },
-      { q:"What's the leave policy?", ic:'shield' }
-    ];
+    // permission-faithful example prompts (2x2 grid, as in production NewGPT)
+    const prompts = App.suggestPrompts(u).slice(0, 4).map(s => ({ q: s.q, ic: s.ic }));
 
-    const empty = `<div style="max-width:560px;margin:7vh auto 0;text-align:center">
+    const empty = `<div style="max-width:600px;margin:6vh auto 0;text-align:center">
         <div style="width:54px;height:54px;border-radius:14px;margin:0 auto 18px;background:var(--ink);display:grid;place-items:center;color:var(--brand-400)">${App.icon('chat')}</div>
         <h1 style="font-size:24px">Chat with your policies</h1>
         <p class="muted" style="margin-top:8px;font-size:14px">PolyGPT answers questions grounded in the policy documents you attach. Pick a policy, or ask in plain English - Tara only ever reads from policies your role can open.</p>
-        <div class="grid" style="margin-top:22px;text-align:left;gap:10px">
+        <div class="login__label" style="margin-top:24px;text-align:left">Example prompts</div>
+        <div class="grid grid-2" style="margin-top:8px;text-align:left;gap:10px">
           ${prompts.map(s=>`<button class="chat-suggest__btn" onclick="App.polygptView.ask('${s.q.replace(/'/g,"\\'")}')">${App.icon(s.ic)}<span style="flex:1">${App.esc(s.q)}</span><span class="tag">Try</span></button>`).join('')}
         </div>
       </div>`;
 
-    return `<div class="page" style="max-width:980px;display:flex;flex-direction:column;height:calc(100vh - 150px)">
+    return `<div class="page" style="max-width:1060px;display:flex;flex-direction:column;height:calc(100vh - 150px)">
       <div style="flex:1;display:flex;gap:16px;min-height:0">
 
-        <!-- left mini-rail (visual) -->
-        <div style="width:54px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:4px">
-          <button class="topbar__btn" title="New chat" onclick="App.polygptView.newChat()" style="background:var(--brand-600);border-color:var(--brand-600);color:#fff">${App.icon('plus')}</button>
-          <button class="topbar__btn" title="History" onclick="App.polygptView.history()">${App.icon('clock')}</button>
-          <button class="topbar__btn" title="Browse policies" onclick="App.navigate('policies')">${App.icon('file')}</button>
+        <!-- threads rail: collapsed icons, expands on hover to show conversation titles (as in production) -->
+        <div class="pg-rail" id="pgRail" onmouseenter="this.classList.add('is-open')" onmouseleave="this.classList.remove('is-open')">
+          <button class="pg-rail__new" title="New chat" onclick="App.polygptView.newChat()">${App.icon('plus')}<span class="pg-rail__lbl">New chat</span></button>
+          <div class="login__label pg-rail__head"><span class="pg-rail__lbl">Conversations</span></div>
+          <div class="pg-rail__list" id="pgThreads"></div>
+          <div style="flex:1"></div>
+          <button class="pg-rail__item" title="Browse policies" onclick="App.navigate('policies')">${App.icon('file')}<span class="pg-rail__lbl">Browse policies</span></button>
         </div>
 
         <!-- chat column -->
@@ -58,9 +58,10 @@ App.registerView('polygpt', {
               <span class="muted" style="font-size:11.5px">Attach policies to ground every answer.</span>
             </div>
             <div class="chat-inputwrap" style="border:none;padding:0;align-items:center">
-              <textarea id="polygptInput" rows="1" placeholder="Ask anything about your policies…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.polygptView.ask();}"></textarea>
+              <textarea id="polygptInput" rows="1" placeholder="Ask anything about your policies…" oninput="var e=document.getElementById('pgErr');if(e)e.style.display='none';" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.polygptView.ask();}"></textarea>
               <button class="chat-send" onclick="App.polygptView.ask()">${App.icon('send')}</button>
             </div>
+            <div id="pgErr" style="display:none;color:#b3402e;font-size:12px;margin-top:6px"></div>
           </div>
         </div>
       </div>
@@ -74,11 +75,39 @@ App.polygptView = {
   mount() {
     App.polygptView.render();
     App.polygptView.renderChips();
+    App.polygptView.renderThreads();
     const i = document.getElementById('polygptInput');
     if (i) i.focus();
   },
   // render() repaints the live thread (alias kept to mirror App.copilot.render)
   render() { App.polygptView.renderThread(); },
+
+  /* ---------------- conversations (threads rail; session-scoped in the demo) ----------------
+     The active thread's message array IS the stored one (by reference), so new
+     messages land in the saved conversation without extra bookkeeping. */
+  _threads() { if (!App.state.polygptThreads) App.state.polygptThreads = []; return App.state.polygptThreads; },
+  _ensureThread(firstText) {
+    if (App.state.polygptCur) return;
+    const id = 'T' + (this._threads().length + 1) + '-' + firstText.length;
+    this._threads().unshift({ id, title: firstText.slice(0, 52) + (firstText.length > 52 ? '…' : ''), msgs: App.state.polygpt, sel: (App.state.polygptSel || []).slice() });
+    App.state.polygptCur = id;
+    this.renderThreads();
+  },
+  openThread(id) {
+    const t = this._threads().find(x => x.id === id); if (!t) return;
+    App.state.polygpt = t.msgs;
+    App.state.polygptSel = (t.sel || []).slice();
+    App.state.polygptCur = id;
+    App.reload();
+  },
+  renderThreads() {
+    const host = document.getElementById('pgThreads'); if (!host) return;
+    const cur = App.state.polygptCur;
+    const ts = this._threads();
+    host.innerHTML = ts.length
+      ? ts.map(t => `<button class="pg-rail__item pg-thread${t.id === cur ? ' is-cur' : ''}" title="${App.esc(t.title)}" onclick="App.polygptView.openThread('${t.id}')">${App.icon('chat')}<span class="pg-rail__lbl">${App.esc(t.title)}</span></button>`).join('')
+      : `<div class="pg-rail__empty"><span class="pg-rail__lbl muted" style="font-size:11.5px">No conversations yet</span></div>`;
+  },
 
   /* ---------------- selected-policy chips above the input ---------------- */
   renderChips() {
@@ -160,10 +189,11 @@ App.polygptView = {
     App.toast(n ? `${n} polic${n===1?'y':'ies'} attached` : 'No policies attached');
   },
 
-  /* ---------------- mini-rail actions ---------------- */
+  /* ---------------- rail actions ---------------- */
   newChat() {
-    App.state.polygpt = [];
+    App.state.polygpt = [];          // fresh array; the old one stays referenced by its thread
     App.state.polygptSel = [];
+    App.state.polygptCur = null;
     App.reload();
     App.toast('Started a new PolyGPT chat');
   },
@@ -194,31 +224,81 @@ App.polygptView = {
       const src = m.sources && m.sources.length
         ? `<div class="src-row">${m.sources.map(s=>{const ic={hrms:'users',jira:'branch',policy:'shield',locked:'lock',notion:'book',slack:'chat'}[s.kind]||'database';return `<span class="src-chip ${s.kind}">${App.icon(ic)} ${App.esc(s.label)}</span>`;}).join('')}</div>`
         : '';
-      const attachedLine = `<div class="row gap-8" style="margin-top:11px;padding-top:10px;border-top:1px dashed var(--line)">
+      // attached policies as files with clickable page citations (open the PDF at the cited page)
+      const files = m.attached && m.attached.length
+        ? m.attached.map(id => { const p = App.policy(id); if (!p) return '';
+            const cite = App.pdf ? App.pdf.cite('policy', p.id, Object.keys(p.facts || {})[0] || 1, null) : '';
+            return `<span class="pg-file">${App.icon('file')} ${App.esc(p.name)} ${cite}</span>`;
+          }).join('')
+        : `<span style="font-size:11.5px;color:var(--ink-2)">None - answered across all policies you can access</span>`;
+      const attachedLine = `<div class="row gap-8" style="margin-top:11px;padding-top:10px;border-top:1px dashed var(--line);flex-wrap:wrap">
           <span class="muted" style="font-size:11.5px;font-weight:600">${App.icon('shield','')} Policies attached:</span>
-          <span style="font-size:11.5px;color:var(--ink-2)">${m.attached && m.attached.length ? m.attached.map(id=>App.esc((App.policy(id)||{}).name||id)).join(', ') : 'None - answered across all policies you can access'}</span>
+          ${files}
           <span class="spacer" style="flex:1"></span>
-          <button class="btn btn--ghost btn--sm" title="Helpful" onclick="App.polygptView.rate(${idx},'up')">${App.icon('up')}</button>
-          <button class="btn btn--ghost btn--sm" title="Not helpful" onclick="App.polygptView.rate(${idx},'down')">${App.icon('down')}</button>
+          <button class="btn btn--ghost btn--sm${m.rating === 'up' ? ' chg-ok is-on' : ''}" title="Helpful" onclick="App.polygptView.rate(${idx},'up')">${App.icon('up')}</button>
+          <button class="btn btn--ghost btn--sm${m.rating === 'down' ? ' chg-no is-on' : ''}" title="Not helpful" onclick="App.polygptView.rate(${idx},'down')">${App.icon('down')}</button>
         </div>`;
-      return `<div class="msg msg--ai" style="margin-bottom:16px"><div class="msg__av">${App.icon('sparkles')}</div><div class="msg__bubble" style="max-width:82%">${m.html}${src}${attachedLine}</div></div>`;
+      // dislike opens a reason picker (3 preset reasons + custom, as in production FeedbackBox)
+      const fb = m.fbOpen
+        ? `<div class="pg-fb"><span class="muted" style="font-size:12px">What went wrong?</span>
+            ${App.polygptView.FB_REASONS.map((r, ri) => `<button class="btn btn--sm" onclick="App.polygptView.fbReason(${idx},${ri})">${App.esc(r)}</button>`).join('')}
+            <button class="btn btn--sm" onclick="App.polygptView.fbCustom(${idx})">${App.icon('edit')} Custom reply</button>
+          </div>`
+        : (m.feedbackReason ? `<div class="pg-fb is-done"><span class="muted" style="font-size:12px">${App.icon('check','')} Feedback: ${App.esc(m.feedbackReason)}</span></div>` : '');
+      return `<div class="msg msg--ai" style="margin-bottom:16px"><div class="msg__av">${App.icon('sparkles')}</div><div class="msg__bubble" style="max-width:82%">${m.html}${src}${attachedLine}${fb}</div></div>`;
     }).join('');
     t.scrollTop = t.scrollHeight;
   },
+
+  /* ---------------- feedback (like = immediate accept; dislike = reason picker) ---------------- */
+  FB_REASONS: ["Don't like the style", 'Not factually correct', "Didn't fully follow instructions"],
   rate(idx, dir) {
+    const m = App.state.polygpt[idx]; if (!m) return;
+    if (dir === 'up') {
+      m.rating = 'up'; m.fbOpen = false; m.feedbackReason = '';
+      App.toast('Feedback submitted - marked helpful');
+    } else {
+      m.rating = 'down'; m.fbOpen = true;   // ask why before recording the reason
+    }
+    App.polygptView.renderThread();
+  },
+  fbReason(idx, ri) {
+    const m = App.state.polygpt[idx]; if (!m) return;
+    m.feedbackReason = App.polygptView.FB_REASONS[ri] || ''; m.fbOpen = false;
+    App.toast('Feedback submitted - thank you');
+    App.polygptView.renderThread();
+  },
+  fbCustom(idx) {
+    App.openModal({
+      title: 'Tell us more', sub: 'What should this answer have done differently?',
+      body: `<div class="field" style="margin-bottom:0"><label>Your feedback</label><textarea class="textarea" id="pgFbText" rows="3" placeholder="e.g. it missed the latest circular…"></textarea></div>`,
+      footer: `<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.polygptView.fbCustomGo(${idx})">${App.icon('send')} Submit feedback</button>`
+    });
+  },
+  fbCustomGo(idx) {
     const m = App.state.polygpt[idx];
-    if (m) m.rating = dir;
-    App.toast(dir === 'up' ? 'Thanks - marked helpful' : 'Thanks - feedback noted');
+    const txt = ((document.getElementById('pgFbText') || {}).value || '').trim();
+    if (m) { m.feedbackReason = txt || 'Custom feedback'; m.fbOpen = false; }
+    App.closeModal();
+    App.toast('Feedback submitted - thank you');
+    App.polygptView.renderThread();
   },
 
   /* ---------------- ask ---------------- */
   ask(text) {
     const inp = document.getElementById('polygptInput');
     text = (text || (inp && inp.value) || '').trim();
-    if (!text) return;
+    if (!text) {  // visible validation instead of a silent return
+      const er = document.getElementById('pgErr');
+      if (er) { er.textContent = 'Enter a question to continue.'; er.style.display = 'block'; }
+      if (inp) inp.focus();
+      return;
+    }
     if (inp) inp.value = '';
+    const er = document.getElementById('pgErr'); if (er) er.style.display = 'none';
 
     const attached = (App.state.polygptSel || []).slice();
+    App.polygptView._ensureThread(text);   // first message of a fresh chat starts a conversation (threads rail)
 
     // If exactly one policy is attached and the question is bare, nudge Tara
     // toward that policy by naming it - keeps retrieval permission-faithful.

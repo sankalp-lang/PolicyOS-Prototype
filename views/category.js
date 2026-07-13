@@ -16,7 +16,7 @@ App.registerView('category', {
     const cards = DB.categories.map(c => {
       const enabled = c.enabled !== false;
       const subs = c.subs.length
-        ? c.subs.map(s => `<span class="tag">${App.esc(s)}</span>`).join(' ')
+        ? c.subs.map(s => `<span class="tag" style="display:inline-flex;align-items:center;gap:5px">${App.esc(s)}<button class="amd-pol__x" title="Remove sub-category" onclick="event.stopPropagation();App.categoryView.removeSub('${App.esc(c.name)}','${App.esc(s)}')">${App.icon('x')}</button></span>`).join(' ')
         : `<span class="muted" style="font-size:12.5px">No sub-categories yet</span>`;
       const pc = polByCat(c.name);
       return `<div class="card card--pad" data-cat="${c.name.toLowerCase()}" style="${enabled ? '' : 'opacity:.6'}">
@@ -60,8 +60,29 @@ App.registerView('category', {
 App.categoryView = {
   toggle(btn, name) {
     const c = DB.categories.find(x => x.name === name); if (!c) return;
-    const now = c.enabled !== false; c.enabled = !now;
-    App.toast(`“${name}” ${c.enabled ? 'enabled - now visible' : 'disabled - hidden from filters, lists & Tara'}`, c.enabled ? 'ok' : 'warn');
+    const now = c.enabled !== false;
+    if (now) { App.categoryView.confirmDisable(name); return; }   // disabling needs confirmation
+    c.enabled = true;
+    App.toast(`“${name}” enabled - now visible`, 'ok');
+    App.reload();
+  },
+  confirmDisable(name) {
+    const pc = DB.policies.filter(p => p.category === name).length;
+    App.openModal({
+      title: 'Disable “' + name + '”?', sub: 'This hides the category everywhere until you re-enable it.',
+      body: `<div class="lock-banner">${App.icon('alert')} <span>Are you sure you want to disable <strong>${App.esc(name)}</strong>? Disabling this will hide all related policies (<strong>${pc}</strong>) and its sub-categories everywhere - repository, filters, dropdowns and Tara. The underlying data is kept and you can re-enable it later.</span></div>`,
+      footer: `<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--danger" onclick="App.categoryView.doDisable('${App.esc(name)}')">${App.icon('x')} Disable category</button>`
+    });
+  },
+  doDisable(name) {
+    const c = DB.categories.find(x => x.name === name); if (c) c.enabled = false;
+    App.closeModal();
+    App.toast(`“${name}” disabled - hidden from filters, lists & Tara`, 'warn');
+    App.reload();
+  },
+  removeSub(cat, sub) {
+    const c = DB.categories.find(x => x.name === cat); if (c) c.subs = c.subs.filter(s => s !== sub);
+    App.toast(`Removed “${sub}” from ${cat}`, 'warn');
     App.reload();
   },
 
@@ -87,8 +108,8 @@ App.categoryView = {
     App.openModal({
       title: 'Add Sub-Category',
       sub: 'Add a sub-category and link it to an existing category.',
-      body: `<div class="field"><label>Sub-Category Name <span class="req">*</span></label><input class="input" id="newSubName" placeholder="e.g. Education Loan"/></div>
-        <div class="field" style="margin-bottom:0"><label>Link Category <span class="req">*</span></label><select class="select" id="newSubCat" style="width:100%">${DB.categories.map(c => `<option value="${App.esc(c.name)}">${App.esc(c.name)}</option>`).join('')}</select><div class="hint">The sub-category will be nested under this parent category.</div></div>`,
+      body: `<div class="field"><label>Sub-Category Name(s) <span class="req">*</span></label><input class="input" id="newSubName" placeholder="e.g. Education Loan, Gold Loan"/><div class="hint">Add several at once, separated by commas.</div></div>
+        <div class="field" style="margin-bottom:0"><label>Link Category <span class="req">*</span></label><select class="select" id="newSubCat" style="width:100%">${DB.categories.map(c => `<option value="${App.esc(c.name)}">${App.esc(c.name)}</option>`).join('')}</select><div class="hint">The sub-categor${'ies'} will be nested under this parent category.</div></div>`,
       footer: `<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.categoryView.saveSub()">Save Sub-Category</button>`
     });
     setTimeout(() => { const i = document.getElementById('newSubName'); if (i) i.focus(); }, 120);
@@ -96,18 +117,25 @@ App.categoryView = {
   saveSub() {
     const i = document.getElementById('newSubName');
     const sel = document.getElementById('newSubCat');
-    const name = (i && i.value || '').trim();
-    if (!name) { App.toast('Enter a sub-category name', 'err'); if (i) i.focus(); return; }
+    const raw = (i && i.value || '').trim();
+    if (!raw) { App.toast('Enter a sub-category name', 'err'); if (i) i.focus(); return; }
     const parent = sel ? sel.value : '';
+    const pc = DB.categories.find(c => c.name === parent);
+    const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+    // reject duplicates against the existing sub-categories AND within the batch (case-insensitive)
+    const existing = (pc ? pc.subs : []).map(s => s.toLowerCase());
+    const seen = {}; const dupes = [];
+    names.forEach(n => { const k = n.toLowerCase(); if (existing.indexOf(k) >= 0 || seen[k]) dupes.push(n); seen[k] = 1; });
+    if (dupes.length) { App.toast('Already exists in ' + parent + ': ' + dupes.join(', '), 'err'); if (i) i.focus(); return; }
     App.closeModal();
-    App.toast(`“${name}” added to ${parent} (demo)`);
+    App.toast(names.length + ` sub-categor${names.length === 1 ? 'y' : 'ies'} added to ${parent} (demo)`);
   },
 
   edit(name) {
     const c = DB.categories.find(x => x.name === name);
     if (!c) { App.toast('Category not found', 'err'); return; }
     const subRows = c.subs.length
-      ? c.subs.map(s => `<div class="togglerow"><div class="togglerow__txt"><b>${App.esc(s)}</b></div><div class="spacer"></div><button class="btn btn--sm btn--danger" onclick="App.toast('Removed “${App.esc(s)}” (demo)','warn')">${App.icon('trash')} Remove</button></div>`).join('')
+      ? c.subs.map(s => `<div class="togglerow"><div class="togglerow__txt"><b>${App.esc(s)}</b></div><div class="spacer"></div><button class="toggle on" title="Enable / disable this sub-category" onclick="this.classList.toggle('on')"></button><button class="btn btn--sm btn--danger" style="margin-left:10px" onclick="App.toast('Removed “${App.esc(s)}” (demo)','warn')">${App.icon('trash')} Remove</button></div>`).join('')
       : App.ui.empty('layers', 'No sub-categories', 'Add one from the Categories page.');
     App.openModal({
       title: 'Edit Category · ' + c.name,

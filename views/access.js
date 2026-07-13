@@ -7,8 +7,10 @@ App.registerView('access', {
       <div class="row gap-6 mt-8"><span class="pill pill--gray">${App.icon('key')} ${App.esc(c.auth)}</span></div></div>`;
 
     const polRows = DB.policies.map(p => {
-      const scope = p.access.everyone ? '<span class="pill pill--green">Everyone</span>'
-        : [].concat((p.access.roles||[]).map(r=>`<span class="tag">${DB.roleLabels[r]||r}</span>`)).concat((p.access.teams||[]).map(t=>`<span class="tag">${App.esc(t)}</span>`)).join(' ');
+      const parts = [`<span class="tag">${App.esc(p.category)}</span>`];
+      if (p.access && p.access.everyone) parts.unshift('<span class="pill pill--green">All staff</span>');
+      ((p.access && p.access.users)||[]).forEach(uid=>{const e=App.emp(uid);parts.push(`<span class="tag">${App.esc(e?e.name:uid)} (direct)</span>`);});
+      const scope = parts.join(' ');
       return `<tr><td><div class="cell-strong">${App.esc(p.name)}${p.sensitive?' '+App.ui.pill('Confidential','red'):''}</div><div class="muted" style="font-size:12px">${App.esc(p.category)} · ${p.version}</div></td>
         <td><div class="row wrap gap-6">${scope}</div></td>
         <td><button class="btn btn--sm" onclick="App.accessView.edit('${p.id}')">${App.icon('edit')} Edit access</button></td></tr>`;
@@ -53,18 +55,15 @@ App.registerView('access', {
 App.accessView = {
   edit(id) {
     const p = App.policy(id);
-    const roleRows = Object.keys(DB.roleLabels).map(r => {
-      const on = p.access.everyone || (p.access.roles||[]).includes(r);
-      return `<div class="togglerow"><div class="togglerow__txt"><b>${DB.roleLabels[r]}</b></div><div class="spacer"></div><button class="toggle ${on?'on':''}" onclick="this.classList.toggle('on')"></button></div>`;
-    }).join('');
-    const teamRows = DB.teams.map(t => {
-      const on = p.access.everyone || (p.access.teams||[]).includes(t.name);
-      return `<div class="togglerow"><div class="togglerow__txt"><b>${App.esc(t.name)}</b></div><div class="spacer"></div><button class="toggle ${on?'on':''}" onclick="this.classList.toggle('on')"></button></div>`;
+    // access is category-scoped; on top of that a policy can be shared company-wide or granted to named people
+    const grantRows = DB.users.map(u => { const e = App.emp(u.id); const on = (p.access.users||[]).includes(u.id);
+      return `<div class="togglerow"><div class="togglerow__txt"><b>${App.esc(e?e.name:u.id)}</b><span>${App.esc(DB.roleLabels[u.role]||u.role)}</span></div><div class="spacer"></div><button class="toggle ${on?'on':''}" onclick="this.classList.toggle('on')"></button></div>`;
     }).join('');
     App.openModal({
-      title:'Edit access · '+p.name, sub:'Grant view & query access by role or team. Source-level ACLs are inherited automatically.', lg:true,
-      body:`<div class="togglerow"><div class="togglerow__txt"><b>Everyone (all staff)</b><span>Any authenticated employee can view & query</span></div><div class="spacer"></div><button class="toggle ${p.access.everyone?'on':''}" onclick="this.classList.toggle('on')"></button></div>
-        <div class="grid grid-2 mt-16"><div><div class="login__label">By role</div>${roleRows}</div><div><div class="login__label">By team</div>${teamRows}</div></div>`,
+      title:'Edit access · '+p.name, sub:'Category scoping governs who sees this; add company-wide or per-person grants on top.', lg:true,
+      body:`<div class="info-banner" style="margin-top:0">${App.icon('shield')} <span>This policy is in the <strong>${App.esc(p.category)}</strong> category. Anyone assigned that category can already view it - use the grants below to widen access.</span></div>
+        <div class="togglerow"><div class="togglerow__txt"><b>All staff (company-wide)</b><span>Any authenticated employee can view &amp; query</span></div><div class="spacer"></div><button class="toggle ${p.access.everyone?'on':''}" onclick="this.classList.toggle('on')"></button></div>
+        <div class="login__label mt-16">Direct grants (per person)</div>${grantRows}`,
       footer:`<button class="btn" onclick="App.closeModal()">Cancel</button><button class="btn btn--primary" onclick="App.closeModal();App.toast('Access rules updated (demo)')">Save access</button>`
     });
   }

@@ -82,14 +82,25 @@ personas.forEach(function(user){
 /* --- RBAC semantic assertions (the actual product thesis) --- */
 var semFails = [];
 function chk(cond, msg){ if(!cond) semFails.push(msg); }
-var admin = personas.find(function(p){return p.id==='THQ0144';});   // Sankalp / admin
-var staff = personas.find(function(p){return p.id==='THQ0125';});   // Chirag / staff user
-var hr    = personas.find(function(p){return p.id==='THQ0145';});   // Putul / HR admin
+var admin = personas.find(function(p){return p.id==='THQ0144';});   // Sankalp / admin (all categories)
+var pmL   = personas.find(function(p){return p.id==='THQ0101';});   // Anmol / policy manager (Lending)
+var pmC   = personas.find(function(p){return p.id==='THQ0165';});   // Subhrangshu / policy manager (Compliance)
+var staff = personas.find(function(p){return p.id==='THQ0125';});   // Chirag / staff user (HR + a doc grant)
 function locked(r){ return /don.t have access|no access|cannot access|hidden|restricted/i.test(r.html) || (r.sources||[]).some(function(s){return s.kind==='locked';}); }
-// Policy-based permission moat (connectors/HRMS/Jira routing parked → policy-centric)
-var a1=App.askTara('personal loan eligibility criteria', staff); chk(locked(a1), 'RBAC: staff must be DENIED the personal loan policy');
+// Category-scoped permission moat
+var a1=App.askTara('personal loan eligibility criteria', staff); chk(locked(a1), 'RBAC: staff must be DENIED the personal loan policy (Lending)');
 var a3=App.askTara('personal loan eligibility criteria', admin); chk(/700|cibil/i.test(a3.html), 'RBAC: admin must SEE personal loan facts');
 var a7=App.askTara("what's the leave policy", staff);            chk(/leave|privilege|18/i.test(a7.html) && !locked(a7), 'RBAC: staff CAN see everyone-policy (leave)');
+var aK=App.askTara('kyc and aml policy summary', staff);         chk(locked(aK), 'RBAC: staff DENIED KYC (Compliance category, not assigned to them)');
+// category scoping between two policy managers
+chk(App.visiblePolicies(pmL).some(function(p){return p.id==='P-PL';}) && !App.visiblePolicies(pmL).some(function(p){return p.id==='P-KYC';}), 'RBAC: Lending PM sees Personal Loan, NOT the Compliance-only KYC policy');
+chk(App.visiblePolicies(pmC).some(function(p){return p.id==='P-KYC';}) && !App.visiblePolicies(pmC).some(function(p){return p.id==='P-PL';}), 'RBAC: Compliance PM sees KYC, NOT any Lending policy');
+chk(App.canEditPolicy(App.policy('P-PL'), pmL) && !App.canEditPolicy(App.policy('P-PL'), pmC), 'RBAC: only the in-category PM can edit a policy');
+chk(App.canEditPolicy(App.policy('P-PL'), admin) && !App.canEditPolicy(App.policy('P-LEAVE'), staff), 'RBAC: admin edits anything; staff never edits');
+// document-level grant mechanism: adding a person to access.users flips one out-of-category policy visible
+var _gp = App.policy('P-MSME'); var _gBefore = App.canViewPolicy(_gp, staff);
+_gp.access.users.push('THQ0125'); var _gAfter = App.canViewPolicy(_gp, staff); _gp.access.users = _gp.access.users.filter(function(x){return x!=='THQ0125';});
+chk(_gBefore===false && _gAfter===true, 'RBAC: a per-person document grant flips a single out-of-category policy visible');
 
 // LLM real-model path: the CONTEXT handed to the model is itself permission-filtered (policies-only now)
 var ctxAdmin = App.llm.buildContext(admin), ctxStaff = App.llm.buildContext(staff);
@@ -137,7 +148,9 @@ var ctx = App.llm.buildContext(admin);
 chk(!/WORK IN PROGRESS/.test(ctx) && /POLICIES/.test(ctx), 'LLM context: policies-only (people/Jira parked)');
 // suggested prompts are policy / BFSI focused (no HRMS/Jira)
 var sp = App.suggestPrompts(admin);
-chk(sp.some(function(p){return p.tag==='Policy';}) && !sp.some(function(p){return p.tag==='HRMS' || p.tag==='Jira';}), 'Prompts: policy/BFSI focused (no HRMS/Jira)');
+chk(sp.some(function(p){return p.tag==='Lending';}) && !sp.some(function(p){return p.tag==='HRMS' || p.tag==='Jira';}), 'Prompts: admin gets BFSI/lending prompts (no HRMS/Jira)');
+var spStaff = App.suggestPrompts(staff);
+chk(spStaff.length>=2 && !spStaff.some(function(p){return p.tag==='Lending' || p.tag==='Compliance' || p.tag==='Simulate';}), 'Prompts: staff prompts are permission-faithful (no Lending/Compliance/Simulate)');
 
 // Model config: selecting a model persists & shows even without a key (demo); a key makes it live
 try { localStorage.setItem('tara_llm_cfg', JSON.stringify({primary:{provider:'anthropic',model:'claude-opus-4-8',key:''}})); } catch(e){}
@@ -152,7 +165,7 @@ chk(/Demo mode/.test(App.llm.statusLabel()), 'Model: no selection falls back to 
 var navAdmin = App.navModel(admin), navPM = App.navModel(personas.find(function(p){return p.id==='THQ0101';}));
 chk(navAdmin.groups.some(function(g){return g.title==='Administration' && g.items.some(function(i){return i.id==='usersaccess';});}), 'Admin sees "Users & access" under Administration');
 chk(!navAdmin.groups.some(function(g){return g.items.some(function(i){return i.id==='connectors';});}), 'Connectors parked — not in admin nav');
-chk(!navPM.groups.some(function(g){return g.title==='Administration';}), 'Policy Manager does NOT see Administration');
+chk(navPM.groups.some(function(g){return g.title==='Administration' && g.items.length===1 && g.items[0].id==='usersaccess';}), 'Policy Manager Administration = User Management only (scoped), no Categories');
 chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='assessments';});}), 'Assessments lives under Company Brain');
 chk(navAdmin.groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='policies';});}), 'Policies now live under Company Brain');
 chk(App.navModel(staff).groups.some(function(g){return g.title==='Company Brain' && g.items.some(function(i){return i.id==='policies';});}), 'Staff: Policies under Company Brain too');
@@ -249,9 +262,16 @@ App.regulatoryView._addPolicy(_amdId, _addPid);
 chk(App.regulatoryView._effectivePolicyIds(DB.amendments[0]).indexOf(_addPid) >= 0 && App.regulatoryView._changesForPolicy(_addPid).length === _addChBefore + 1, 'Regulatory: reviewer can add a new affected policy (with an editable manual change)');
 App.regulatoryView.autorun = true; App.regulatoryView._amd = {}; App.regulatoryView.editor = null; App.regulatoryView._st = {}; App.regulatoryView._audit = [];
 
-// Sidebar: "Ask Tara" removed as a nav item for every role (it's the floating launcher instead)
+// "Ask Tara" fully removed: no nav item, no floating bot button, no contextual buttons
 chk(!App.navModel(admin).pinned.concat(App.navModel(admin).groups.flatMap(function(g){return g.items;})).some(function(i){return i.id==='copilot';}), 'Sidebar: no "Ask Tara" nav item for admin/manager');
 chk(!App.navModel(staff).pinned.some(function(i){return i.id==='copilot';}), 'Sidebar: no "Ask Tara" nav item for staff');
+(function(){
+  var hit = [];
+  ['policies','assessments','approvals','insightgen','polygpt','dashboard'].forEach(function(r){
+    try { var h = App.views[r].render({user:admin}); if (typeof h==='string' && /Ask Tara/.test(h)) hit.push(r); } catch(e){}
+  });
+  chk(hit.length===0, 'No "Ask Tara" text in rendered views (found in: '+hit.join(', ')+')');
+})();
 
 // Tara what-if hook routes to the simulator (RBAC-scoped)
 var simAns = App.askTara('what if we raise the personal loan cibil cutoff to 760', admin);
@@ -270,10 +290,150 @@ chk(!asErr, 'Assessments: admin detail renders with the real staff submission: '
 // Assessments: staff still cannot see a Lending quiz (RBAC gating retained on the My Assessments page)
 chk(!App.visiblePolicies(staff).some(function(p){return p.category==='Lending';}), 'Assessments: staff cannot see Lending, so the Lending quiz stays gated off');
 
+// ===== Production parity (UI carries the same information/flow as policy-fe) =====
+// Category: disable needs confirmation; sub-categories removable inline; duplicate names rejected
+chk(typeof App.categoryView.confirmDisable==='function' && typeof App.categoryView.doDisable==='function' && typeof App.categoryView.removeSub==='function', 'Category: confirm-disable + inline sub-remove present');
+var _hrC = DB.categories.find(function(c){return c.name==='HR';});
+App.categoryView.toggle(null,'HR');
+chk(_hrC.enabled !== false, 'Category: toggling an enabled category does NOT disable without confirmation');
+App.categoryView.doDisable('HR');
+chk(_hrC.enabled === false, 'Category: doDisable() disables after confirmation');
+_hrC.enabled = true;
+// Assessments: results tab carries per-row Remind + status filter + user search; schedule is editable
+App.state.user = admin;
+App.assessmentsView.open('AS1');
+var _det = App.assessmentsView._detail;
+chk(_det && /Remind/.test(_det.resultsTab) && /asResStatus/.test(_det.resultsTab) && /asResSearch/.test(_det.resultsTab), 'Assessments: results tab has per-row Remind + status filter + user search');
+chk(typeof App.assessmentsView.editSchedule==='function', 'Assessments: edit end-date/passing-score modal present');
+App.closeModal();
+// RuleSense: versions + compare, language-aware codegen, variable map with type/description
+// Version history + working compare (shared App.versions; used by RuleSense + Policies table)
+chk(typeof App.versions==='object' && typeof App.versions.list==='function' && typeof App.versions.open==='function' && typeof App.versions.chipsHtml==='function', 'Versions: shared engine (list/open/chips) present');
+var _vlist = App.versions.list('P-PL');
+chk(_vlist.length>=2 && _vlist[_vlist.length-1].status==='Active' && _vlist.every(function(v){return Array.isArray(v.rules);}), 'Versions: P-PL has a multi-version trail ending Active, each with rules');
+var _vd = App.versions._diffHtml('P-PL', _vlist[0].v, _vlist[_vlist.length-1].v);
+chk(/rule.? changed/.test(_vd) && /diff-del/.test(_vd) && /diff-add/.test(_vd), 'Versions: compare shows a real rule-by-rule diff between two versions');
+chk(/mono/.test(App.versions.chipsHtml('P-PL')), 'Versions: RuleSense version chips render');
+// P-ISEC's rule[0] has no digit; the diff must still be non-empty (fix targets the first numeric rule)
+var _iv = App.versions.list('P-ISEC');
+chk(/rule.? changed/.test(App.versions._diffHtml('P-ISEC', _iv[0].v, _iv[_iv.length-1].v)), 'Versions: policies whose first rule has no number still produce a real diff');
+// superseded version dates are chronological (older = earlier), not reversed
+var _pv = App.versions.list('P-PL');
+var _dv = function(s){ var M={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11}; var m=/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/.exec(s||''); return m?(+m[3])*372+(M[m[2]]||0)*31+(+m[1]):0; };
+chk(_dv(_pv[0].date) < _dv(_pv[_pv.length-1].date), 'Versions: oldest version dated before the current one (chronological)');
+chk(/def<\/span> decide|Python/.test(App.rulesenseView.codeFor(App.policy('P-PL'),'Python')) && /com\.tartan\.bre|Drools/.test(App.rulesenseView.codeFor(App.policy('P-PL'),'Drools (DRL)')) && /public class/.test(App.rulesenseView.codeFor(App.policy('P-PL'),'Java')), 'RuleSense: code generation follows the selected language (Python/Drools/Java)');
+chk(/Compare versions/.test(App.rulesenseView.editorHtml(App.policy('P-PL'), admin)), 'RuleSense: editor shows the version row + compare');
+var _vm = App.rulesenseView.varMap(App.policy('P-PL'));
+chk(_vm.some(function(m){return m.dest && m.type && m.desc;}), 'RuleSense: variable map carries data type + description');
+// PolyGPT: threads with titles, two-tier feedback, page-cited attachments
+App.state.polygpt = []; App.state.polygptThreads = []; App.state.polygptCur = null; App.state.polygptSel = [];
+App.state.polygpt.push({role:'user', text:'what is the personal loan eligibility criteria', attached:[]});
+App.polygptView._ensureThread('what is the personal loan eligibility criteria');
+chk(App.polygptView._threads().length===1 && /personal loan/.test(App.polygptView._threads()[0].title), 'PolyGPT: first message starts a titled conversation (threads rail)');
+App.state.polygpt.push({role:'ai', html:'<p>x</p>', sources:[], attached:['P-PL']});
+App.polygptView.rate(1,'down');
+chk(App.state.polygpt[1].fbOpen===true, 'PolyGPT: dislike opens the reason picker (not a silent toast)');
+App.polygptView.fbReason(1,1);
+chk(App.state.polygpt[1].feedbackReason==='Not factually correct' && !App.state.polygpt[1].fbOpen, 'PolyGPT: preset feedback reason recorded');
+App.polygptView.rate(1,'up');
+chk(App.state.polygpt[1].rating==='up', 'PolyGPT: like submits immediately');
+chk(App.polygptView.FB_REASONS.length===3, 'PolyGPT: three preset dislike reasons (as in production)');
+App.state.polygpt = []; App.state.polygptThreads = []; App.state.polygptCur = null;
+
+// Regulatory feed: authority/date filter + 10-per-page pagination + informational releases + PDF open
+App.state.user = admin; App.regulatoryView.autorun = true; App.regulatoryView._amd = {}; App.regulatoryView._relFilter = { auth:'', month:'' };
+chk((DB.amendments||[]).length >= 14, 'Regulatory: broader release feed (>=14 circulars)');
+var _auths = App.regulatoryView._relAuthorities();
+chk(_auths.indexOf('RBI')>=0 && _auths.indexOf('SEBI')>=0 && _auths.indexOf('Self-uploaded')>=0, 'Regulatory: authority filter covers RBI / SEBI / Self-uploaded');
+chk(App.regulatoryView._relMonths().length >= 3, 'Regulatory: date filter offers multiple months');
+var _regHtml = App.views['regulatory'].render({user:admin});
+chk(/See previous uploads/.test(_regHtml), 'Regulatory: shows "See previous uploads" when >10 releases');
+chk((_regHtml.match(/reg-rel__title/g)||[]).length <= 10, 'Regulatory: only 10 releases shown on the page');
+chk(/openFull\('amendment'/.test(_regHtml), 'Regulatory: release opens the circular PDF in a big overlay');
+chk(typeof App.regulatoryView.allReleasesModal==='function' && typeof App.regulatoryView._filterAllRel==='function', 'Regulatory: "all uploads" window + its filter present');
+var _amdInfo = DB.amendments.find(function(a){return a.changes && a.changes.length===0;});
+chk(!!_amdInfo && App.regulatoryView._visibleRelease(_amdInfo), 'Regulatory: informational (0-change) circulars still show in the feed');
+chk(App.pdf.build('amendment', _amdInfo.id).pages.length >= 2, 'Regulatory: informational circular still builds a readable PDF');
+App.regulatoryView._relFilter = { auth:'SEBI', month:'' };
+var _regSebi = App.views['regulatory'].render({user:admin});
+chk(!/Master Direction/.test(_regSebi), 'Regulatory: authority filter narrows the feed (SEBI only - RBI Master Direction card gone)');
+App.regulatoryView._relFilter = { auth:'', month:'' };
+
+// Policies table mirrors production Policy Management columns + flow
+App.state.user = admin;
+var _polHtml = App.views['policies'].render({user:admin});
+chk(/Policy Management/.test(_polHtml) && /Manage, view, and edit/.test(_polHtml), 'Policies: production heading + subtitle');
+chk(/Policy Owner/.test(_polHtml) && /Sub Category/.test(_polHtml) && /Created On/.test(_polHtml) && /Last Modified On/.test(_polHtml) && /Policy Name/.test(_polHtml), 'Policies: production columns present (Owner/Sub Category/Created/Last Modified)');
+chk(typeof App.policiesView.toggleFilter==='function' && typeof App.policiesView.toggleAll==='function', 'Policies: filter toggle + select-all present');
+
 // Guided product tour (role-aware spotlight walkthrough)
 chk(typeof App.tour === 'object' && typeof App.tour.start === 'function', 'Tour: engine present');
 chk(Array.isArray(App.tour.stepsFor(admin)) && App.tour.stepsFor(admin).length >= 5, 'Tour: admin gets a role-aware step list');
 chk(App.tour.stepsFor(staff)[3] && /home/i.test(App.tour.stepsFor(staff)[3].title), 'Tour: step list includes the home step');
+
+// ===== RBAC PRD matrix: three roles, sidebar/view gating, dashboard quick actions =====
+chk(Object.keys(DB.roleLabels).length===3 && DB.roleLabels.admin && DB.roleLabels.policy_manager && DB.roleLabels.user, 'Roles: exactly three (admin, policy_manager, user)');
+chk(!DB.roleLabels.risk_approver && !DB.roleLabels.assessment_manager, 'Roles: risk_approver / assessment_manager removed');
+chk(DB.users.every(function(u){return ['admin','policy_manager','user'].indexOf(u.role)>=0;}), 'Users: every persona is one of the three roles');
+chk(DB.users.every(function(u){return Array.isArray(u.categories);}), 'Users: every persona has assigned categories (category scoping)');
+// staff sidebar: Policy Management now includes the AI tools (PolyGPT / RuleSense / BRE Decoder) + Company Brain
+chk(App.navModel(staff).groups.some(function(g){return g.title==='Policy Management' && ['polygpt','rulesense','bredecoder'].every(function(id){return g.items.some(function(i){return i.id===id;});});}), 'Sidebar: staff Policy Management has PolyGPT + RuleSense + BRE Decoder');
+chk(!App.navModel(staff).groups.some(function(g){return g.items.some(function(i){return ['approvals','regulatory','insightgen','usersaccess','category'].indexOf(i.id)>=0;});}), 'Sidebar: staff still has NO Approvals/Regulatory/InsightGen/UserMgmt/Categories');
+// view-level access gating (canAccessView)
+['approvals','regulatory','insightgen','usersaccess','category'].forEach(function(r){
+  chk(!App.canAccessView(r, staff), 'Access: staff cannot open '+r);
+});
+['polygpt','rulesense','bredecoder'].forEach(function(r){
+  chk(App.canAccessView(r, staff), 'Access: staff CAN open '+r+' (scoped to their policies)');
+});
+['polygpt','rulesense','approvals','regulatory','bredecoder','insightgen'].forEach(function(r){
+  chk(App.canAccessView(r, pmL), 'Access: policy manager can open '+r);
+});
+chk(App.canAccessView('usersaccess', pmL) && !App.canAccessView('category', pmL), 'Access: policy manager CAN open User Management (scoped) but NOT Categories');
+chk(['polygpt','rulesense','approvals','regulatory','bredecoder','insightgen','usersaccess','category','policies','assessments'].every(function(r){return App.canAccessView(r, admin);}), 'Access: admin can open every view');
+chk(App.canAccessView('policies', staff) && App.canAccessView('assessments', staff) && App.canAccessView('dashboard', staff), 'Access: staff can open Home, Policies, Assessments');
+// regulatory scoped to a PM category: Compliance PM sees KYC amendment, not Lending ones
+App.state.user = pmC;
+var regC = App.views['regulatory'].render({user:pmC});
+chk(!/Personal Loan Credit Policy/.test(regC) && /KYC/.test(regC), 'Regulatory: Compliance PM sees only Compliance releases (KYC), not Lending');
+App.state.user = staff;
+var regStaff = App.views['regulatory'].render({user:staff});
+chk(/do not have access|not have access/i.test(regStaff), 'Regulatory: staff is locked out of the module');
+// dashboard quick actions: InsightGen is never a quick action; sets are role-specific
+var dashAdmin = App.views['dashboard'].render({user:admin});
+chk(!/navigate\('insightgen'\)/.test(dashAdmin), 'Dashboard: InsightGen is NOT a quick action for admin');
+chk(/navigate\('usersaccess'\)/.test(dashAdmin) && /navigate\('category'\)/.test(dashAdmin), 'Dashboard: admin quick actions include User Management + Categories');
+chk(/Quick links/.test(dashAdmin) && !/Recent attestations/.test(dashAdmin), 'Dashboard: admin shows Quick links (recent attestations removed)');
+var dashPM = App.views['dashboard'].render({user:pmL});
+chk(!/navigate\('insightgen'\)/.test(dashPM), 'Dashboard: InsightGen is NOT a quick action for policy manager');
+chk(/navigate\('polygpt'\)/.test(dashPM) && /navigate\('regulatory'\)/.test(dashPM) && /navigate\('approvals'\)/.test(dashPM), 'Dashboard: PM quick actions = Regulatory, PolyGPT, Approvals');
+var dashStaff = App.views['dashboard'].render({user:staff});
+chk(/Policies you can access/.test(dashStaff) && /My assessments/i.test(dashStaff), 'Dashboard: staff sees the simplified view');
+// Assessments manager list is category-scoped: a Lending PM does not see a Compliance (KYC) assessment
+App.state.user = pmL;
+var asL = App.views['assessments'].render({user:pmL});
+chk(!/KYC/.test(asL), 'Assessments: Lending PM list excludes Compliance (KYC) assessments');
+var asAdmin = App.views['assessments'].render({user:admin});
+chk(/KYC/.test(asAdmin), 'Assessments: admin sees all assessments incl KYC');
+// sidebar label is "Home" for every role (not "Dashboard" for managers)
+chk(App.navModel(admin).pinned[0].label==='Home' && App.navModel(pmL).pinned[0].label==='Home' && App.navModel(staff).pinned[0].label==='Home', 'Sidebar: main item is "Home" for all three roles');
+// User Management scoping: admin = whole org; PM = only the people they manage; staff = none
+chk(App.managedEmployees(admin).length === DB.employees.length, 'UserMgmt: admin manages the whole org');
+chk(App.managedEmployees(staff).length === 0, 'UserMgmt: staff manages no one');
+var mgL = App.managedEmployees(pmL);
+chk(mgL.length > 0 && mgL.length < DB.employees.length && mgL.every(function(e){return (pmL.manages||[pmL.team]).indexOf(e.team)>=0;}), 'UserMgmt: policy manager roster is scoped to their team(s) only');
+chk(mgL.some(function(e){return e.id==='THQ0101';}) && !mgL.some(function(e){return e.id==='THQ0144';}), 'UserMgmt: PM sees their own team, NOT the admin/founders');
+chk(App.navModel(pmL).groups.some(function(g){return g.title==='Administration' && g.items.some(function(i){return i.id==='usersaccess';}) && !g.items.some(function(i){return i.id==='category';});}), 'Sidebar: PM Administration group has User Management but NOT Categories');
+App.state.usersAccess = {tab:'people'};
+App.state.user = pmL;
+var uaPM = App.views['usersaccess'].render({user:pmL});
+var outsider = DB.employees.find(function(e){return (pmL.manages||[]).indexOf(e.team)<0;});
+chk(uaPM.indexOf(outsider.name) < 0 && !/Access rules/.test(uaPM) && !/Manage Users/.test(uaPM), 'UserMgmt: PM view is scoped (no out-of-team person, no Access-rules tab, no Manage Users button)');
+App.state.user = admin;
+var uaAdmin = App.views['usersaccess'].render({user:admin});
+chk(uaAdmin.indexOf(outsider.name) >= 0 && /Access rules/.test(uaAdmin), 'UserMgmt: admin view shows the whole org + the Access-rules tab');
+chk(/Manage Users/.test(uaAdmin) && /Product Category/.test(uaAdmin) && /Date Added/.test(uaAdmin) && /AI Access/.test(uaAdmin) && /Employee ID/.test(uaAdmin) && /Add, edit, and manage users/.test(uaAdmin), 'UserMgmt: admin table carries the production columns + Manage Users menu + production copy');
+App.state.user = admin;
 
 print('=== RBAC semantics ===');
 print(semFails.length ? 'SEMANTIC FAILS:\n'+semFails.join('\n') : 'RBAC semantics OK (deny + allow paths verified)');

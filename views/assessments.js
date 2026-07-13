@@ -3,7 +3,7 @@ App.registerView('assessments', {
   title(ctx) { return (ctx.user.role === 'user') ? 'My Assessments' : 'Assessments'; },
   render(ctx) {
     const u = ctx.user;
-    const isManager = u.role === 'policy_manager' || u.role === 'admin' || u.role === 'assessment_manager';
+    const isManager = u.role === 'policy_manager' || u.role === 'admin';
 
     /* ---------- Staff "My Assessments" (simplified) ---------- */
     if (!isManager) {
@@ -44,12 +44,13 @@ App.registerView('assessments', {
       </div>`;
     }
 
-    /* ---------- Manager list view ---------- */
-    const totalDone = DB.assessments.reduce((s, a) => s + a.done, 0);
-    const totalParticipants = DB.assessments.reduce((s, a) => s + a.participants, 0);
+    /* ---------- Manager list view (category-scoped: admin = all, policy manager = their categories) ---------- */
+    const scopedAssess = u.role === 'admin' ? DB.assessments : DB.assessments.filter(a => (u.categories || []).indexOf(a.category) >= 0);
+    const totalDone = scopedAssess.reduce((s, a) => s + a.done, 0);
+    const totalParticipants = scopedAssess.reduce((s, a) => s + a.participants, 0);
     const pendingCount = totalParticipants - totalDone;
 
-    const rows = DB.assessments.map(a => `
+    const rows = scopedAssess.map(a => `
       <tr class="clickable" data-name="${a.name.toLowerCase()}" data-status="${a.status}" onclick="App.assessmentsView.open('${a.id}')">
         <td><div class="cell-person">${App.icon('clipboard')}<div><div class="cell-strong">${App.esc(a.name)}</div><div class="muted" style="font-size:12px">${App.ui.pill(a.category, 'violet')}</div></div></div></td>
         <td class="muted">${a.start}</td>
@@ -71,14 +72,14 @@ App.registerView('assessments', {
       <div class="grid grid-4" style="margin-bottom:22px">
         ${App.assessmentsHelpers.kpi('Assignment done', totalDone, 'check', 'green', 'completions logged')}
         ${App.assessmentsHelpers.kpi('Assignment pending', pendingCount, 'clock', 'amber', 'awaiting completion')}
-        ${App.assessmentsHelpers.kpi('Active assessments', DB.assessments.filter(a => a.status === 'Active').length, 'clipboard', 'blue', 'currently open')}
-        ${App.assessmentsHelpers.kpi('Avg. passing bar', Math.round(DB.assessments.reduce((s, a) => s + a.passing, 0) / DB.assessments.length) + '%', 'shield', 'violet', 'across all tests')}
+        ${App.assessmentsHelpers.kpi('Active assessments', scopedAssess.filter(a => a.status === 'Active').length, 'clipboard', 'blue', 'currently open')}
+        ${App.assessmentsHelpers.kpi('Avg. passing bar', (scopedAssess.length ? Math.round(scopedAssess.reduce((s, a) => s + a.passing, 0) / scopedAssess.length) : 0) + '%', 'shield', 'violet', 'across all tests')}
       </div>
       <div class="toolbar">
         <div class="search-input">${App.icon('search')}<input id="asSearch" placeholder="Search assessments…"/></div>
         <select class="select" id="asStatus"><option value="">All status</option><option>Active</option><option>Draft</option><option>Completed</option></select>
       </div>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th>Test name</th><th>Start</th><th>End</th><th>Passing</th><th>Participants</th><th>Status</th><th></th></tr></thead><tbody id="asBody">${rows}</tbody></table></div>
+      ${scopedAssess.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Test name</th><th>Start</th><th>End</th><th>Passing</th><th>Participants</th><th>Status</th><th></th></tr></thead><tbody id="asBody">${rows}</tbody></table></div>` : App.ui.empty('clipboard', 'No assessments in your categories', 'Assessments on policies in your categories will appear here.')}
     </div>`;
   },
   mount(root, ctx) {
@@ -165,16 +166,22 @@ App.assessmentsView = {
         </div>
       </div>`).join('');
 
-    // real staff submissions first (highlighted), then synthesized history
+    // per-row actions: reminder (only for people who haven't completed) + single-row export
+    const actionCell = (canRemind) => `<td onclick="event.stopPropagation()"><div class="row gap-6">
+        <button class="btn btn--sm" ${canRemind ? `onclick="App.toast('Reminder sent (demo)')"` : 'disabled title="Already completed"'}>${App.icon('bell')} Remind</button>
+        <button class="btn btn--sm btn--ghost" title="Export this result (CSV / Excel)" onclick="App.toast('Exporting user result (demo)')">${App.icon('download')}</button>
+      </div></td>`;
+    // real staff submissions first (highlighted), then synthesized history, then pending participants
     const subs = App.assessmentsView._subs(a.id);
     const subIds = new Set(subs.map(s => s.userId));
-    const realRows = subs.map(s => { const e = App.emp(s.userId); const nm = e ? e.name : s.userId;
-      return `<tr style="background:var(--brand-50)">
+    const realRows = subs.map(s => { const e = App.emp(s.userId); const nm = e ? e.name : s.userId; const stt = s.passed ? 'passed' : 'failed';
+      return `<tr data-user="${App.esc(nm.toLowerCase())}" data-status="${stt}" style="background:var(--brand-50)">
         <td><div class="cell-person">${e ? App.ui.avatar(e, 'sm') : ''}<span class="cell-strong">${App.esc(nm)}</span>${App.ui.pill('New', 'blue')}</div></td>
         <td class="muted">${App.esc(s.date)}</td>
         <td><b>${s.score}%</b></td>
         <td>${s.attempted}/${s.total}</td>
         <td>${App.ui.pill(s.passed ? 'Passed' : 'Failed', s.passed ? 'green' : 'red')}</td>
+        ${actionCell(false)}
       </tr>`; }).join('');
     const synthCount = Math.max(0, (a.done || 0) - subs.length);
     const pool = DB.employees.filter(e => !subIds.has(e.id)).slice(0, synthCount);
@@ -184,18 +191,32 @@ App.assessmentsView = {
       const passed = score >= a.passing;
       const attempted = qs.length - (Math.abs(seed) % 2);
       const day = 1 + (Math.abs(seed) % 14);
-      return `<tr>
+      return `<tr data-user="${App.esc(e.name.toLowerCase())}" data-status="${passed ? 'passed' : 'failed'}">
         <td><div class="cell-person">${App.ui.avatar(e, 'sm')}<span class="cell-strong">${App.esc(e.name)}</span></div></td>
         <td class="muted">${String(day).padStart(2, '0')} Jun 2026</td>
         <td><b>${score}%</b></td>
         <td>${attempted}/${qs.length}</td>
         <td>${App.ui.pill(passed ? 'Passed' : 'Failed', passed ? 'green' : 'red')}</td>
+        ${actionCell(false)}
       </tr>`;
     }).join('');
-    const resultRows = realRows + synthRows;
-    const resultsTab = (a.done || subs.length)
-      ? `<div class="row" style="margin-bottom:12px;justify-content:flex-end"><button class="btn btn--sm" onclick="App.toast('Exporting results to CSV (demo)')">${App.icon('download')} Export</button></div>
-         <div class="table-wrap"><table class="tbl"><thead><tr><th>User name</th><th>Date</th><th>Score</th><th>Questions attempted</th><th>Status</th></tr></thead><tbody>${resultRows}</tbody></table></div>`
+    const shown = new Set([].concat(Array.from(subIds), pool.map(e => e.id)));
+    const pendingCount = Math.max(0, (a.participants || 0) - (a.done || 0));
+    const pendPool = DB.employees.filter(e => !shown.has(e.id)).slice(0, Math.min(pendingCount, 8));
+    const pendingRows = pendPool.map(e => `<tr data-user="${App.esc(e.name.toLowerCase())}" data-status="pending">
+        <td><div class="cell-person">${App.ui.avatar(e, 'sm')}<span class="cell-strong">${App.esc(e.name)}</span></div></td>
+        <td class="muted">-</td><td class="muted">-</td><td>0/${qs.length}</td>
+        <td>${App.ui.pill('Pending', 'amber')}</td>
+        ${actionCell(true)}
+      </tr>`).join('');
+    const resultRows = realRows + synthRows + pendingRows;
+    const resultsTab = (a.done || subs.length || pendPool.length)
+      ? `<div class="row gap-8" style="margin-bottom:12px">
+           <div class="search-input" style="flex:1">${App.icon('search')}<input id="asResSearch" placeholder="Search by user name" oninput="App.assessmentsView._filterResults()"/></div>
+           <select class="select" id="asResStatus" onchange="App.assessmentsView._filterResults()"><option value="">All statuses</option><option value="passed">Passed</option><option value="failed">Failed</option><option value="pending">Pending</option></select>
+           <button class="btn btn--sm" onclick="App.toast('Exporting results to CSV (demo)')">${App.icon('download')} Export</button>
+         </div>
+         <div class="table-wrap"><table class="tbl"><thead><tr><th>User name</th><th>Date</th><th>Score</th><th>Questions attempted</th><th>Status</th><th>Action</th></tr></thead><tbody id="asResRows">${resultRows}</tbody></table></div>`
       : App.ui.empty('chart', 'No submissions yet', 'Results will appear here once participants complete the test.');
 
     const renderTabs = (host) => {
@@ -212,11 +233,31 @@ App.assessmentsView = {
         </div>
         <div id="asTabBody">${questionsTab}</div>`,
       footer: `<button class="btn" onclick="App.closeModal()">Close</button>
-        <button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('Tell me about the ${a.category} policy')">${App.icon('sparkles')} Ask Tara</button>`
+        ${a.status !== 'Completed' ? `<button class="btn btn--primary" onclick="App.assessmentsView.editSchedule('${a.id}')">${App.icon('calendar')} Edit dates &amp; score</button>` : ''}`
     });
     // store tab html + state for the tab switcher
     App.assessmentsView._detail = { state, questionsTab, resultsTab };
   },
+  // edit end date + passing score (production allows this for ongoing / scheduled assessments)
+  editSchedule(id) {
+    const a = DB.assessments.find(x => x.id === id); if (!a) return;
+    App.openModal({
+      title: 'Edit schedule · ' + a.name, sub: 'Adjust the end date and passing score for this ' + a.status.toLowerCase() + ' assessment.',
+      body: `<div class="grid grid-2">
+          <div class="field"><label>End date</label><input class="input" type="date" value="2026-06-30"/></div>
+          <div class="field"><label>Passing score (%)</label><input class="input" type="number" min="0" max="100" value="${a.passing}"/></div></div>
+        <div class="info-banner" style="margin-bottom:0">${App.icon('info')} <span>Changing the passing score re-evaluates pass/fail for submissions already recorded.</span></div>`,
+      footer: `<button class="btn" onclick="App.assessmentsView.open('${id}')">${App.icon('arrow')} Back</button><button class="btn btn--primary" onclick="App.closeModal();App.toast('Schedule updated (demo)')">Save changes</button>`
+    });
+  },
+  _filterResults() {
+    const qs = ((document.getElementById('asResSearch') || {}).value || '').toLowerCase();
+    const stv = (document.getElementById('asResStatus') || {}).value || '';
+    document.querySelectorAll('#asResRows tr').forEach(tr => {
+      tr.style.display = ((!qs || (tr.dataset.user || '').indexOf(qs) >= 0) && (!stv || tr.dataset.status === stv)) ? '' : 'none';
+    });
+  },
+  _catOf(e) { try { const cs = App.usersAccessView._userCats(e, App.usersAccessView.provisioned(e.id)); return cs && cs.length ? cs[0] : ''; } catch (_) { return ''; } },
   _tab(el, tab) {
     const d = App.assessmentsView._detail; if (!d) return;
     d.state.tab = tab;
@@ -480,13 +521,15 @@ App.assessmentsView = {
   _userBody() {
     const st = App.state.assessments;
     const teamOpts = DB.teams.map(t => `<button class="btn btn--sm" onclick="App.assessmentsView._selectTeam('${App.esc(t.name).replace(/'/g, "\\'")}')">${App.icon('plus')} ${App.esc(t.name)}</button>`).join('');
-    const list = DB.employees.map(e => `
+    const list = DB.employees.map(e => { const cat = App.assessmentsView._catOf(e);
+      return `
       <label class="minirow" data-n="${e.name.toLowerCase()}" style="cursor:pointer">
         <input type="checkbox" class="wzUser" value="${e.id}" ${st.selected.has(e.id) ? 'checked' : ''} onchange="App.assessmentsView._toggleUser('${e.id}',this.checked)"/>
         ${App.ui.avatar(e, 'sm')}
         <div style="flex:1"><b style="font-weight:600">${App.esc(e.name)}</b> <span class="muted" style="font-size:12px">· ${App.esc(e.title)}</span></div>
+        ${cat ? `<span class="tag" style="color:var(--brand-600)">${App.esc(cat)}</span>` : ''}
         <span class="tag">${App.esc(e.team)}</span>
-      </label>`).join('');
+      </label>`; }).join('');
     return `<p class="muted" style="margin-bottom:12px">Assign this assessment to specific people, or add an entire team at once.</p>
       <div class="row wrap gap-6 mb-16">${teamOpts}</div>
       <div class="search-input" style="margin-bottom:12px"><input id="wzUserSearch" placeholder="Search people…"/></div>
@@ -524,8 +567,16 @@ App.assessmentsView = {
   _finish() {
     const st = App.state.assessments;
     if (!st.selected.size) { App.toast('Select at least one participant', 'warn'); return; }
-    App.closeModal();
-    App.toast('Assessment "' + (st.details.title || 'Untitled') + '" created · ' + st.selected.size + ' assigned');
+    const n = st.selected.size; const title = st.details.title || 'Untitled';
+    App.openModal({
+      title: 'Assignment scheduled', sub: '',
+      body: `<div style="text-align:center;padding:8px 0">
+          <div style="width:56px;height:56px;border-radius:50%;background:var(--green-50);color:var(--green-600);display:grid;place-items:center;margin:0 auto 14px">${App.icon('check')}</div>
+          <h3 style="font-size:17px;margin-bottom:6px">“${App.esc(title)}” is scheduled</h3>
+          <p class="muted" style="max-width:400px;margin:0 auto;line-height:1.6">${n} participant${n === 1 ? '' : 's'} will be notified when it opens (${App.esc(st.details.category)} · passing ${st.details.passing}%). Track completion any time from the assessments list.</p>
+        </div>`,
+      footer: `<button class="btn btn--primary" onclick="App.closeModal()">Done</button>`
+    });
     App.state.assessments = null;
   }
 };

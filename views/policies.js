@@ -7,51 +7,71 @@ App.registerView('policies', {
     const hidden = DB.policies.length - vis.length;
     const canAdd = u.role==='policy_manager' || u.role==='admin';
 
+    // columns mirror the production Policy Management table (PolicyTable.tsx):
+    // select · Policy Name · Policy Owner · Category · Sub Category · Status · Created On · Last Modified On · Version · Action
     const rows = vis.map(p => {
       const owner = App.emp(p.owner);
-      return `<tr class="clickable" data-name="${p.name.toLowerCase()}" data-cat="${p.category}" data-status="${p.status}" onclick="App.policiesView.open('${p.id}')">
-        <td><div class="cell-person">${App.icon('file')}<div><div class="cell-strong">${App.esc(p.name)}${p.sensitive?' '+App.ui.pill('Confidential','red'):''}</div><div class="muted" style="font-size:12px">${App.esc(p.sub)}</div></div></div></td>
+      const created = p.created || p.updated;
+      return `<tr class="clickable" data-name="${(p.name + ' ' + (owner ? owner.name : '') + ' ' + p.category + ' ' + (p.sub || '')).toLowerCase()}" data-cat="${p.category}" data-status="${p.status}" onclick="App.policiesView.open('${p.id}')">
+        <td onclick="event.stopPropagation()" style="width:34px"><input type="checkbox" class="pol-check"/></td>
+        <td><div class="cell-strong" style="color:var(--brand-600)">${App.esc(p.name)}${p.sensitive?' '+App.ui.pill('Confidential','red'):''}</div></td>
         <td><div class="cell-person">${App.ui.avatar(owner,'sm')}<span>${App.esc(owner.name)}</span></div></td>
         <td>${App.ui.pill(p.category,'violet')}</td>
-        <td><span class="mono" style="font-size:12px">${p.version}</span></td>
+        <td class="muted">${p.sub ? App.esc(p.sub) : 'N/A'}</td>
         <td>${App.ui.statusPill(p.status)}</td>
-        <td class="muted">${p.updated}</td>
+        <td class="muted" style="font-size:12.5px">${created}</td>
+        <td class="muted" style="font-size:12.5px">${p.updated}</td>
+        <td onclick="event.stopPropagation()"><button class="btn btn--sm" title="Version history & compare" onclick="App.versions.open('${p.id}')"><span class="mono">${App.esc(p.version)}</span> ${App.icon('chevron')}</button></td>
+        <td onclick="event.stopPropagation()"><button class="btn btn--sm btn--icon-ok" title="View policy" onclick="App.policiesView.open('${p.id}')">${App.icon('eye')}</button></td>
       </tr>`;
     }).join('');
 
     return `<div class="page">
-      <div class="page__head"><div><h1>Policies</h1><p>Manage, view and query all active policies. You see only what your role can access.</p></div><div class="spacer"></div>
+      <div class="page__head"><div><h1>Policy Management</h1><p>Manage, view, and edit all your active and inactive policies in one place.</p></div><div class="spacer"></div>
         ${canAdd?`<button class="btn btn--primary" onclick="App.policiesView.add()">${App.icon('plus')} Add Policy</button>`:''}</div>
       ${hidden?`<div class="lock-banner">${App.icon('lock')} <span><strong>${hidden} polic${hidden>1?'ies are':'y is'} hidden</strong> - outside your role's access scope. Permission is enforced at retrieval, not hidden in the UI alone.</span></div>`:''}
       <div class="toolbar">
-        <div class="search-input">${App.icon('search')}<input id="polSearch" placeholder="Search policies…"/></div>
-        <select class="select" id="polCat"><option value="">All categories</option>${App.enabledCats().map(c=>`<option>${c.name}</option>`).join('')}</select>
-        <select class="select" id="polStatus"><option value="">All status</option><option>Active</option><option>Draft</option></select>
+        <div class="search-input" style="flex:1">${App.icon('search')}<input id="polSearch" placeholder="Search Policy, SPOC, Product and Categories"/></div>
+        <button class="btn" onclick="App.policiesView.toggleFilter()">${App.icon('filter')} Filter</button>
+        <div id="polFilters" class="row gap-8" style="display:none">
+          <select class="select" id="polCat"><option value="">All categories</option>${App.enabledCats().map(c=>`<option>${c.name}</option>`).join('')}</select>
+          <select class="select" id="polStatus"><option value="">All status</option><option>Active</option><option>Draft</option></select>
+        </div>
       </div>
-      <div class="table-wrap"><table class="tbl"><thead><tr><th>Policy</th><th>Owner</th><th>Category</th><th>Version</th><th>Status</th><th>Updated</th></tr></thead><tbody id="polBody">${rows}</tbody></table></div>
+      <div class="table-wrap"><table class="tbl"><thead><tr>
+        <th style="width:34px"><input type="checkbox" class="pol-check" onclick="App.policiesView.toggleAll(this)"/></th>
+        <th>Policy Name</th><th>Policy Owner</th><th>Category</th><th>Sub Category</th><th>Status</th><th>Created On</th><th>Last Modified On</th><th>Version</th><th>Action</th>
+      </tr></thead><tbody id="polBody">${rows}</tbody></table></div>
     </div>`;
   },
   mount(root) {
     const filter = () => {
       const q=(root.querySelector('#polSearch').value||'').toLowerCase();
-      const cat=root.querySelector('#polCat').value, st=root.querySelector('#polStatus').value;
+      const catEl=root.querySelector('#polCat'), stEl=root.querySelector('#polStatus');
+      const cat=catEl?catEl.value:'', st=stEl?stEl.value:'';
       root.querySelectorAll('#polBody tr').forEach(tr=>{
         const ok = tr.dataset.name.includes(q) && (!cat||tr.dataset.cat===cat) && (!st||tr.dataset.status===st);
         tr.style.display = ok?'':'none';
       });
     };
     root.querySelector('#polSearch').oninput = filter;
-    root.querySelector('#polCat').onchange = filter;
-    root.querySelector('#polStatus').onchange = filter;
+    const catEl=root.querySelector('#polCat'); if(catEl) catEl.onchange = filter;
+    const stEl=root.querySelector('#polStatus'); if(stEl) stEl.onchange = filter;
   }
 });
 
 App.policiesView = {
+  toggleFilter() { const f = document.getElementById('polFilters'); if (f) f.style.display = f.style.display === 'none' ? 'flex' : 'none'; },
+  toggleAll(cb) { document.querySelectorAll('#polBody .pol-check').forEach(x => { x.checked = cb.checked; }); },
   open(id) {
     const p = App.policy(id); const u = App.currentUser(); const owner = App.emp(p.owner);
     const facts = Object.entries(p.facts).map(([k,v])=>`<div class="minirow"><span class="muted">${App.esc(k)}</span><span class="spacer" style="flex:1"></span><b>${App.esc(v)}</b></div>`).join('');
-    const access = (p.access.everyone?['Everyone (all staff)']:[].concat((p.access.roles||[]).map(r=>DB.roleLabels[r]||r)).concat(p.access.teams||[])).map(a=>`<span class="tag">${App.esc(a)}</span>`).join(' ') || '<span class="tag">Restricted</span>';
-    const canRules = u.role==='admin'||u.role==='policy_manager'||u.role==='risk_approver';
+    // access is category-scoped, plus optional company-wide / per-person document grants
+    const grants = ['Category: '+p.category+(App.catEnabled(p.category)?'':' (disabled)')];
+    if (p.access && p.access.everyone) grants.push('All staff (company-wide)');
+    ((p.access && p.access.users) || []).forEach(uid => { const e = App.emp(uid); grants.push((e?e.name:uid)+' (direct)'); });
+    const access = grants.map(a=>`<span class="tag">${App.esc(a)}</span>`).join(' ');
+    const canRules = App.canEditPolicy(p, u);
     App.openModal({
       title: p.name, sub: p.category+' · '+p.sub+' · '+p.version, lg:true,
       body: `<div class="row gap-8" style="margin-bottom:14px;flex-wrap:wrap">${App.ui.statusPill(p.status)} ${App.ui.pill('Owner: '+owner.name,'gray')} <span class="muted" style="font-size:12px;align-self:center">Updated ${p.updated}</span></div>
@@ -63,10 +83,9 @@ App.policiesView = {
             <b style="font-size:12.5px">Who can access this</b><div class="row wrap gap-6 mt-8">${access}</div>
           </div>
         </div>`,
-      footer: `<button class="btn" onclick="App.toast('Opening version compare (demo)')">${App.icon('layers')} Compare Versions</button>
+      footer: `<button class="btn" onclick="App.closeModal();App.versions.open('${p.id}')">${App.icon('layers')} Compare Versions</button>
         ${App.sim && App.sim.paramsFor(p.id) ? `<button class="btn" onclick="App.closeModal();App.simView.open('${p.id}')">${App.icon('chart')} Simulate impact</button>` : ''}
-        ${canRules?`<button class="btn btn--primary" onclick="App.closeModal();App.navigate('rulesense',{policy:'${p.id}'})">${App.icon('code')} View Rules</button>`:''}
-        <button class="btn btn--teal" onclick="App.closeModal();App.chat.toggle(true);App.chat.ask('Tell me about ${p.name.replace(/'/g,"")}')">${App.icon('sparkles')} Ask Tara</button>`
+        ${canRules?`<button class="btn btn--primary" onclick="App.closeModal();App.navigate('rulesense',{policy:'${p.id}'})">${App.icon('code')} View Rules</button>`:''}`
     });
     if (App.pdf) App.pdf.renderInto('polPdfPane', 'policy', p.id, { fullBtn: true });
   },

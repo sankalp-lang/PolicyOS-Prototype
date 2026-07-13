@@ -1,6 +1,6 @@
-/* Ask Tara - full-page company copilot (the unified command surface) */
+/* Assistant - full-page company copilot (unreachable from nav; kept for reference) */
 App.registerView('copilot', {
-  title: 'Ask Tara',
+  title: 'Assistant',
   render(ctx) {
     if (!App.state.copilot) App.state.copilot = [];
     const u = ctx.user;

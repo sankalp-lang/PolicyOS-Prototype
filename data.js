@@ -123,42 +123,42 @@ window.DB = (function () {
     { name:'Compliance', subs:['KYC / AML','Information Security','Regulatory Updates'],          color:'#3a7479', enabled:true }
   ];
 
-  /* ---------- Policies (with permission-faithful access rules) ----------
-     access: a viewer may see the policy if ANY match:
-       - user.role === 'admin'
-       - access.everyone === true
-       - user.role in access.roles
-       - user.team in access.teams
-       - user.id   in access.users
+  /* ---------- Policies (permission-faithful, CATEGORY-SCOPED per the RBAC PRD) ----------
+     A viewer may see a policy if ANY match:
+       - user.role === 'admin'  (admin effectively has every category)
+       - the policy's category is in the user's assigned categories
+       - access.everyone === true  (company-wide document grant)
+       - user.id in access.users  (per-person document grant)
+     Turning a category off hides its policies everywhere for everyone.
   */
   const policies = [
     { id:'P-PL',  name:'Personal Loan Credit Policy', category:'Lending', sub:'Personal Loan', owner:'THQ0101', status:'Active', version:'v3.2', updated:'12 Jun 2026', sensitive:false,
-      access:{ everyone:false, roles:['policy_manager','risk_approver'], teams:['Risk & Policy',"Founder's Office",'Product'], users:[] },
+      access:{ everyone:false, users:[] },
       summary:'Unsecured personal loan underwriting policy. Defines eligibility, bureau cutoffs, FOIR limits, documentation and approval matrix.',
       facts:{ 'Minimum CIBIL score':'700', 'Age band':'23–58 years', 'Max FOIR':'55%', 'Ticket size':'₹50K – ₹15L', 'Min monthly income':'₹25,000', 'Tenure':'12–60 months' },
       rules:['IF cibil_score < 700 THEN reject','IF age < 23 OR age > 58 THEN reject','IF foir > 0.55 THEN refer to L2','IF monthly_income < 25000 THEN reject'] },
     { id:'P-2W',  name:'Two-Wheeler Loan Policy', category:'Lending', sub:'Two-Wheeler', owner:'THQ0101', status:'Active', version:'v2.0', updated:'02 Jun 2026', sensitive:false,
-      access:{ everyone:false, roles:['policy_manager','risk_approver'], teams:['Risk & Policy',"Founder's Office",'Product'], users:[] },
+      access:{ everyone:false, users:[] },
       summary:'Two-wheeler financing policy. LTV up to 90%, salaried and self-employed segments.',
       facts:{ 'Minimum CIBIL score':'680', 'Age band':'21–60 years', 'Max LTV':'90%', 'Ticket size':'₹40K – ₹2L', 'Tenure':'12–36 months' },
       rules:['IF cibil_score < 680 THEN reject','IF ltv > 0.90 THEN reject','IF age < 21 THEN reject'] },
     { id:'P-MSME',name:'MSME Lending Policy', category:'Lending', sub:'MSME', owner:'THQ0101', status:'Active', version:'v1.4', updated:'28 May 2026', sensitive:false,
-      access:{ everyone:false, roles:['policy_manager','risk_approver'], teams:['Risk & Policy',"Founder's Office",'Product'], users:[] },
+      access:{ everyone:false, users:[] },
       summary:'Secured MSME lending policy. Business vintage, GST turnover and constitution checks.',
       facts:{ 'Minimum CIBIL / CMR':'CMR ≤ 6', 'Business vintage':'≥ 3 years', 'Min age of promoter':'27 years', 'GST turnover':'≥ ₹40L', 'Constitution':'Proprietor / Partnership / LLP / Pvt Ltd' },
       rules:['IF business_vintage_years < 3 THEN reject','IF promoter_age < 27 THEN reject','IF gst_turnover < 4000000 THEN refer'] },
     { id:'P-HL',  name:'Home Loan Policy', category:'Lending', sub:'Home Loan', owner:'THQ0101', status:'Active', version:'v4.1', updated:'09 Jun 2026', sensitive:false,
-      access:{ everyone:false, roles:['policy_manager','risk_approver'], teams:['Risk & Policy',"Founder's Office",'Product'], users:[] },
+      access:{ everyone:false, users:[] },
       summary:'Home loan underwriting. LTV slabs, property valuation and legal/technical clearance.',
       facts:{ 'Minimum CIBIL score':'720', 'Age band':'25–65 years', 'Max LTV':'80%', 'Tenure':'up to 30 years' },
       rules:['IF cibil_score < 720 THEN reject','IF ltv > 0.80 THEN reject'] },
-    { id:'P-COLL',name:'Collections & Recovery Policy', category:'Lending', sub:'Collections', owner:'THQ0165', status:'Active', version:'v2.3', updated:'30 May 2026', sensitive:false,
-      access:{ everyone:false, roles:['risk_approver','policy_manager'], teams:['Risk & Policy',"Founder's Office"], users:[] },
+    { id:'P-COLL',name:'Collections & Recovery Policy', category:'Lending', sub:'Collections', owner:'THQ0101', status:'Active', version:'v2.3', updated:'30 May 2026', sensitive:false,
+      access:{ everyone:false, users:[] },
       summary:'Delinquency bucketing, recovery actions and legal recourse for NPA accounts.',
       facts:{ 'Soft bucket':'0–30 DPD', 'Hard bucket':'90+ DPD', 'Legal trigger':'180 DPD' },
       rules:['IF dpd > 90 THEN move to hard bucket','IF dpd > 180 THEN initiate legal'] },
     { id:'P-KYC', name:'KYC & AML Policy', category:'Compliance', sub:'KYC / AML', owner:'THQ0165', status:'Active', version:'v5.0', updated:'15 Jun 2026', sensitive:false,
-      access:{ everyone:true, roles:[], teams:[], users:[] },
+      access:{ everyone:false, users:[] },
       summary:'Customer due diligence, PEP screening, transaction monitoring and STR/CTR reporting per RBI Master Directions.',
       facts:{ 'CDD':'Mandatory at onboarding', 'Re-KYC':'High-risk: 2 yrs', 'PEP screening':'Required', 'STR filing':'Within 7 days' },
       rules:['IF customer_pep = true THEN enhanced_due_diligence','IF txn flagged THEN file STR within 7 days'] },
@@ -180,18 +180,20 @@ window.DB = (function () {
   ];
 
   /* ---------- Login personas (no passwords - pick & go) ----------
-     role: admin | policy_manager | risk_approver | assessment_manager | user
-  */
+     Exactly three roles (per the RBAC PRD): admin | policy_manager | user.
+     Access is CATEGORY-SCOPED: `categories` lists the policy categories a user may see.
+     Admin effectively has all categories. Policy Manager approver (checker) duties live in that role.
+     Two managers are scoped to different categories so category scoping is visible end to end. */
   const users = [
-    { id:'THQ0144', role:'admin',             features:{ polygpt:true, compare:true, assessments:true, copilot:true } },
-    { id:'THQ0101', role:'policy_manager',    features:{ polygpt:true, compare:true, assessments:true, copilot:true } },
-    { id:'THQ0165', role:'risk_approver',     features:{ polygpt:true, compare:true, assessments:false, copilot:true } },
-    { id:'THQ0145', role:'admin',             features:{ polygpt:true, compare:true, assessments:true, copilot:true }, hrAdmin:true },
-    { id:'THQ0125', role:'user',              features:{ polygpt:true, compare:false, assessments:true, copilot:true } }
+    { id:'THQ0144', role:'admin',          categories:['Lending','HR','Compliance'] },   // Sankalp - runs the platform, sees all
+    // Policy managers: `categories` = policy content they own; `manages` = the TEAMS whose people they oversee
+    // (that is who they see in User Management - scoped, not the whole org like admin).
+    { id:'THQ0101', role:'policy_manager', categories:['Lending'],    manages:['Product'] },                 // Anmol - Product team
+    { id:'THQ0165', role:'policy_manager', categories:['Compliance'], manages:['Customer Success','Sales'] },// Subhrangshu (CBO) - CS + Sales
+    { id:'THQ0125', role:'user',           categories:['HR'] }                            // Chirag - staff; reads HR + all-staff docs
   ];
   const roleLabels = {
-    admin:'Administrator', policy_manager:'Policy Manager', risk_approver:'Risk Approver',
-    assessment_manager:'Assessment Manager', user:'Staff User'
+    admin:'Administrator', policy_manager:'Policy Manager', user:'Staff User'
   };
 
   /* ---------- Approval workflows ---------- */
@@ -384,7 +386,42 @@ window.DB = (function () {
       changes:[
         { id:'CH-S19-1', policyId:'P-ISEC', clauseRef:'¶2.1', section:'Vendor access review', current:'Annual', suggested:'Semi-annual', isNew:true,
           rationale:'Clause ¶2.1 requires vendor access to be reviewed at least semi-annually.' }
-      ] }
+      ] },
+    // ---- broader release feed (mix of RBI / SEBI / IRDAI / MCA / self-uploaded; some informational) ----
+    { id:'AMD-51', regulator:'RBI', ref:'RBI/2026-27/51', title:'Fair Practices Code - Grievance Redressal SLAs', date:'09 Jun 2026', status:'New',
+      summary:'Tightens turnaround times for customer grievance resolution across lending products.',
+      changes:[ { id:'CH-51-1', policyId:'P-COLL', clauseRef:'¶7.2', section:'Grievance SLA', current:'30 days', suggested:'21 days',
+        rationale:'Clause ¶7.2 caps grievance resolution at 21 days.' } ] },
+    { id:'AMD-47', regulator:'RBI', ref:'RBI/2026-27/47', title:'Key Facts Statement - Standardised Format', date:'28 May 2026', status:'New',
+      summary:'Mandates a standardised Key Facts Statement (KFS) with the all-inclusive APR for retail loans.',
+      changes:[ { id:'CH-47-1', policyId:'P-HL', clauseRef:'¶3.4', section:'KFS disclosure', current:'Not specified', suggested:'Mandatory KFS with APR', isNew:true,
+        rationale:'Clause ¶3.4 requires a KFS with the all-in APR at sanction.' } ] },
+    { id:'AMD-44', regulator:'RBI', ref:'RBI/2026-27/44', title:'Penal Charges on Loan Accounts', date:'14 May 2026', status:'New',
+      summary:'Penal charges must be reasonable, disclosed, and not capitalised into the principal.', scope:'Applies to all retail lending products. Review penal-charge clauses; no automatic parameter change mapped.', changes:[] },
+    { id:'AMD-IR07', regulator:'IRDAI', ref:'IRDAI/2026/07', title:'Bancassurance - Suitability & Disclosure', date:'02 May 2026', status:'New',
+      summary:'Sets suitability assessment and disclosure norms for insurance distributed with credit.', scope:'Relevant if insurance is cross-sold with loans. Informational for the current policy set.', changes:[] },
+    { id:'AMD-IR05', regulator:'IRDAI', ref:'IRDAI/2026/05', title:'Group Credit Life - Claims Turnaround', date:'19 Apr 2026', status:'New',
+      summary:'Shortens claims settlement turnaround for group credit-life cover.', scope:'Informational - no lending-policy parameter mapped.', changes:[] },
+    { id:'AMD-S14', regulator:'SEBI', ref:'SEBI/HO/2026/14', title:'Outsourcing of Regulated Activities', date:'22 Apr 2026', status:'New',
+      summary:'Board-approved outsourcing policy and material-outsourcing register required.',
+      changes:[ { id:'CH-S14-1', policyId:'P-ISEC', clauseRef:'¶4.3', section:'Material outsourcing register', current:'Not maintained', suggested:'Board-reviewed register', isNew:true,
+        rationale:'Clause ¶4.3 requires a board-reviewed material-outsourcing register.' } ] },
+    { id:'AMD-M03', regulator:'MCA', ref:'MCA/CSR/2026/03', title:'CSR Reporting - Revised Disclosures', date:'05 Apr 2026', status:'New',
+      summary:'Revised CSR spend disclosure format in the board report.', scope:'Corporate governance; informational for the policy library.', changes:[] },
+    { id:'AMD-36', regulator:'RBI', ref:'RBI/2026-27/36', title:'Provisioning on Unsecured Retail Exposure', date:'09 May 2026', status:'New',
+      summary:'Higher standard-asset provisioning on unsecured retail exposure.', scope:'Finance/risk provisioning change; review capital impact. No underwriting parameter mapped.', changes:[] },
+    { id:'AMD-U01', regulator:'Internal', source:'self', ref:'TARTAN/CIRC/2026/01', title:'Travel & Expense - Revised Per-Diem Caps', date:'12 Mar 2026', status:'New',
+      summary:'Internally uploaded circular revising domestic per-diem limits.',
+      changes:[ { id:'CH-U01-1', policyId:'P-TRAVEL', clauseRef:'§2', section:'Per-diem (metro)', current:'₹1,500 / day', suggested:'₹1,800 / day',
+        rationale:'Internal revision to metro per-diem cap effective Q2.' } ] },
+    { id:'AMD-U02', regulator:'Internal', source:'self', ref:'TARTAN/CIRC/2026/02', title:'Leave Policy - Parental Leave Update', date:'26 Feb 2026', status:'New',
+      summary:'Internally uploaded note extending paternity leave.', scope:'HR policy update; routed for awareness.', changes:[] },
+    { id:'AMD-S09', regulator:'SEBI', ref:'SEBI/HO/2026/09', title:'Cyber Incident Reporting Window', date:'31 Mar 2026', status:'New',
+      summary:'Reportable cyber incidents must be notified within 6 hours of detection.',
+      changes:[ { id:'CH-S09-1', policyId:'P-ISEC', clauseRef:'¶5.2', section:'Incident report', current:'Within 24 hrs', suggested:'Within 6 hrs',
+        rationale:'Clause ¶5.2 shortens the incident-reporting window to 6 hours.' } ] },
+    { id:'AMD-31', regulator:'RBI', ref:'RBI/2026-27/31', title:'Co-Lending Arrangements - Disclosure', date:'18 Feb 2026', status:'New',
+      summary:'Enhanced disclosure and default-sharing norms for co-lending.', scope:'Applies if co-lending is used; informational for the current library.', changes:[] }
   ];
 
   return { employees, teams, jiraProjects, jiraIssues, categories, policies,

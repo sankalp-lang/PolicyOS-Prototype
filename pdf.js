@@ -49,6 +49,7 @@
     const pages = [];
     pages.push({ heading: '1. Background', blocks: [{ type: 'p', text: a.regulator + ' ' + a.ref + ' · ' + a.date }, { type: 'p', text: a.summary }] });
     const blocks = (a.changes || []).map(ch => ({ type: 'clause', anchor: ch.id, n: ch.clauseRef, text: ch.section + ' - ' + (ch.isNew ? 'shall introduce: ' : 'shall be: ') + ch.suggested + '. ' + ch.rationale }));
+    if (!blocks.length) blocks.push({ type: 'p', text: a.scope || 'Informational circular - review for awareness. No mandated policy-parameter changes have been mapped to your library.' });
     pages.push({ heading: '2. Directions', blocks: blocks });
     return { kind: 'amendment', title: a.title, file: a.ref.replace(/[^a-z0-9]+/gi, '_') + '.pdf', pages: pages };
   }
@@ -160,4 +161,99 @@
     }
   };
   App.pdf = PDF;
+})();
+
+/* ============================================================
+   App.versions - policy version history + working compare
+   (mirrors the production Versions / VersionSelectionModal / CompareModal flow:
+    a version trail, a From/To picker, and a rule-by-rule diff)
+   ============================================================ */
+(function () {
+  const App = window.App;
+  const V = {
+    // rule text with its first number shifted (older versions had looser thresholds)
+    _olderRule(r, k) {
+      return String(r).replace(/(\d+(?:\.\d+)?)/, function (m) {
+        const num = parseFloat(m);
+        if (num >= 100) return String(Math.max(0, num - 20 * k));
+        if (num < 1) return Math.max(0, num + 0.05 * k).toFixed(2);
+        return String(Math.max(0, num - k));
+      });
+    },
+    // version trail for a policy (curated p.versions if present, else synthesized). Oldest → newest; last = current/Active.
+    list(pid) {
+      const p = App.policy(pid); if (!p) return [];
+      if (p.versions && p.versions.length) return p.versions;
+      const m = /v(\d+)\.(\d+)/.exec(p.version || 'v1.0'); const maj = m ? +m[1] : 1, min = m ? +m[2] : 0;
+      const n = Math.min(3, min + 1);
+      const older = ['02 Jan 2026', '16 Mar 2026'];   // oldest → most-recent superseded (chronological)
+      const rl = p.rules || [];
+      // rule indices that actually contain a number - those are the ones we can diff between versions
+      const numIdx = rl.map(function (r, i) { return /\d/.test(r) ? i : -1; }).filter(function (i) { return i >= 0; });
+      const primary = numIdx.length ? numIdx[0] : (rl.length ? 0 : -1);
+      const secondary = numIdx.length > 1 ? numIdx[1] : primary;
+      const out = [];
+      for (let k = n - 1; k >= 0; k--) {
+        const cur = k === 0;
+        const rules = rl.map(function (r, ri) {
+          if (cur) return r;
+          if (ri === primary) return V._olderRule(r, k);            // always shift the first numeric rule
+          if (ri === secondary && secondary !== primary && k >= 2) return V._olderRule(r, k - 1);
+          return r;
+        });
+        out.push({ v: 'v' + maj + '.' + Math.max(0, min - k), date: cur ? p.updated : (older[n - 1 - k] || '02 Jan 2026'), status: cur ? 'Active' : 'Superseded', rules: rules });
+      }
+      return out;
+    },
+    // inline version-trail chips (newest first, current highlighted) - clicking opens the compare modal
+    chipsHtml(pid) {
+      const vs = V.list(pid); if (!vs.length) return '';
+      const cur = vs[vs.length - 1].v;
+      return vs.slice().reverse().map(function (x) {
+        return `<button class="btn btn--sm${x.v === cur ? ' btn--primary' : ''}" title="${x.date} · ${x.status}" onclick="App.versions.open('${pid}','${x.v}')"><span class="mono">${x.v}</span>${x.v === cur ? ' · current' : ''}</button>`;
+      }).join(' ');
+    },
+    // version history + From/To rule diff (the "options of versions and changes between them")
+    open(pid, focusV) {
+      const p = App.policy(pid); if (!p) return;
+      const vs = V.list(pid);
+      if (vs.length < 2) {
+        App.openModal({ title: 'Version history · ' + p.name, sub: p.version, body: `<p class="muted">This policy has a single version (${App.esc(p.version)}); there is nothing to compare yet.</p>`, footer: `<button class="btn" onclick="App.closeModal()">Close</button>` });
+        return;
+      }
+      const toV = focusV && vs.some(function (x) { return x.v === focusV; }) ? focusV : vs[vs.length - 1].v;
+      const fromIdx = Math.max(0, vs.findIndex(function (x) { return x.v === toV; }) - 1);
+      const fromV = vs[fromIdx].v;
+      App.state.verCmp = { pid: pid };
+      const sel = function (id, val) { return `<select class="select" id="${id}" onchange="App.versions._rerender()">${vs.map(function (x) { return `<option value="${x.v}" ${x.v === val ? 'selected' : ''}>${x.v} · ${x.date} · ${x.status}</option>`; }).join('')}</select>`; };
+      App.openModal({
+        title: 'Version history · ' + p.name, sub: vs.length + ' versions · compare the rules between any two', lg: true,
+        body: `<div class="row gap-8" style="align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+            <div class="field" style="margin:0;min-width:210px"><label>From</label>${sel('vcFrom', fromV)}</div>
+            <button class="btn" title="Swap" onclick="App.versions._swap()">${App.icon('layers')}</button>
+            <div class="field" style="margin:0;min-width:210px"><label>To</label>${sel('vcTo', toV)}</div>
+          </div>
+          <div id="vcDiff">${V._diffHtml(pid, fromV, toV)}</div>`,
+        footer: `<button class="btn" onclick="App.closeModal()">Close</button>`
+      });
+    },
+    _swap() { const f = document.getElementById('vcFrom'), t = document.getElementById('vcTo'); if (f && t) { const tmp = f.value; f.value = t.value; t.value = tmp; V._rerender(); } },
+    _rerender() { const s = App.state.verCmp; if (!s) return; const f = (document.getElementById('vcFrom') || {}).value, t = (document.getElementById('vcTo') || {}).value; const d = document.getElementById('vcDiff'); if (d) d.innerHTML = V._diffHtml(s.pid, f, t); },
+    _diffHtml(pid, fromV, toV) {
+      const vs = V.list(pid); const A = vs.find(function (x) { return x.v === fromV; }), B = vs.find(function (x) { return x.v === toV; });
+      if (!A || !B) return '<p class="muted">Select two versions to compare.</p>';
+      const n = Math.max(A.rules.length, B.rules.length); let changed = 0; let rows = '';
+      for (let i = 0; i < n; i++) {
+        const a = A.rules[i] || '—', b = B.rules[i] || '—'; const diff = a !== b; if (diff) changed++;
+        rows += `<tr><td class="mono muted" style="font-size:11.5px">${i + 1}</td>
+          <td style="font-size:12.5px"><span class="${diff ? 'diff-del' : ''}">${App.esc(a)}</span></td>
+          <td style="font-size:12.5px"><span class="${diff ? 'diff-add' : ''}">${App.esc(b)}</span></td></tr>`;
+      }
+      const banner = changed
+        ? `<div class="info-banner" style="margin:0 0 12px">${App.icon('alert')} <span><strong>${changed} rule${changed === 1 ? '' : 's'} changed</strong> between ${App.esc(fromV)} and ${App.esc(toV)}.</span></div>`
+        : `<div class="info-banner" style="margin:0 0 12px">${App.icon('check')} <span>No rule differences between ${App.esc(fromV)} and ${App.esc(toV)}.</span></div>`;
+      return banner + `<div class="table-wrap"><table class="tbl"><thead><tr><th style="width:34px">#</th><th>${App.esc(fromV)} (rules)</th><th>${App.esc(toV)} (rules)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+  };
+  App.versions = V;
 })();

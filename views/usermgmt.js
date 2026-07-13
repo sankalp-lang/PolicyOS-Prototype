@@ -4,7 +4,7 @@ App.registerView('usermgmt', {
   render(ctx) {
     const u = ctx.user;
 
-    const roleKind = { admin:'violet', policy_manager:'blue', risk_approver:'amber', assessment_manager:'teal', user:'green' };
+    const roleKind = { admin:'violet', policy_manager:'blue', user:'green' };
 
     const rows = DB.users.map(p => {
       const e = App.emp(p.id);
@@ -27,7 +27,7 @@ App.registerView('usermgmt', {
       </tr>`;
     }).join('');
 
-    const canManage = u.role === 'admin' || u.role === 'policy_manager' || u.role === 'risk_approver';
+    const canManage = u.role === 'admin';
 
     return `<div class="page">
       <div class="page__head"><div><h1>User Management</h1><p>Provision PolicyOS users, assign roles, and scope their AI features and policy categories. Access here mirrors what each user can retrieve through Tara.</p></div><div class="spacer"></div>

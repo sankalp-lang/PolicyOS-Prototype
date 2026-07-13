@@ -2,6 +2,7 @@
 App.registerView('insightgen', {
   title: 'InsightGen',
   render(ctx) {
+    if (!App.canAccessView('insightgen', ctx.user)) return App.lockedPage('InsightGen', 'InsightGen is for administrators and policy managers.');
     const s = App.insightgenView._state();
     return `<div class="page">
       <div class="page__head"><div><h1>InsightGen</h1><p>Ask questions of your data in plain English. Tara writes the SQL, runs it, and surfaces proactive insights before you have to ask.</p></div><div class="spacer"></div>
@@ -132,9 +133,6 @@ App.insightgenView = {
           <div>
             <div class="answer-card__h" style="border:none;background:transparent;padding:0 0 8px">${App.icon('sparkles')} Conversation</div>
             <div class="answer-card"><div class="answer-card__b" style="font-size:13.5px;line-height:1.6">${a.answer}</div></div>
-            <div class="row gap-6 mt-12">
-              <button class="btn btn--teal btn--sm" onclick="App.chat.toggle(true);App.chat.ask('${a.followup.replace(/'/g,"\\'")}')">${App.icon('sparkles')} Ask Tara to dig deeper</button>
-            </div>
           </div>
           <div>
             <div class="tabs" style="margin-bottom:14px">${tabBtn('sql', 'Generated SQL', 'code')}${tabBtn('result', 'Result', 'database')}${tabBtn('chart', 'Chart', 'chart')}</div>

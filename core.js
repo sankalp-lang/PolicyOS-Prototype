@@ -90,21 +90,52 @@ window.App = (function () {
     empty(icon, title, sub) { return `<div class="empty"><div class="empty__ic">${App.icon(icon)}</div><b>${title}</b><span>${sub||''}</span></div>`; }
   };
 
-  /* ---------------- RBAC ---------------- */
-  App.canViewPolicy = (p, user) => {
-    user = user || App.state.user;
-    if (!p) return false;
-    if (user.role === 'admin') return true;
-    const a = p.access || {};
-    if (a.everyone) return true;
-    if ((a.roles||[]).includes(user.role)) return true;
-    if ((a.teams||[]).includes(user.team)) return true;
-    if ((a.users||[]).includes(user.id)) return true;
-    return false;
-  };
+  /* ---------------- RBAC (three roles, category-scoped) ----------------
+     Base rule (per the RBAC PRD): access is CATEGORY-SCOPED. A user sees policies whose
+     category is assigned to them; admin effectively has every category. On top of that a
+     policy can be shared company-wide (access.everyone) or granted to named people
+     (access.users) - the document-level grants the PRD allows. Turning a category off hides
+     its policies everywhere for everyone (sidebar, search, counts, AI answers). */
   App.catEnabled = (name) => { const c = DB.categories.find(x => x.name === name); return !c || c.enabled !== false; };
   App.enabledCats = () => DB.categories.filter(c => c.enabled !== false);
-  App.visiblePolicies = user => DB.policies.filter(p => App.catEnabled(p.category) && App.canViewPolicy(p, user));
+  App.userCategories = (user) => {
+    user = user || App.state.user; if (!user) return [];
+    if (user.role === 'admin') return App.enabledCats().map(c => c.name);          // admin = all enabled categories
+    return (user.categories || []).filter(App.catEnabled);
+  };
+  App.canViewPolicy = (p, user) => {
+    user = user || App.state.user;
+    if (!p || !user) return false;
+    if (!App.catEnabled(p.category)) return false;                                 // category off → hidden for everyone
+    if (user.role === 'admin') return true;
+    if (App.userCategories(user).indexOf(p.category) >= 0) return true;            // category scoping
+    const a = p.access || {};
+    if (a.everyone) return true;                                                   // company-wide document grant
+    if ((a.users || []).indexOf(user.id) >= 0) return true;                        // per-person document grant
+    return false;
+  };
+  // edit rights: admin edits any policy; a policy manager edits only policies in their categories; users never edit
+  App.canEditPolicy = (p, user) => {
+    user = user || App.state.user;
+    if (!p || !user || !App.canViewPolicy(p, user)) return false;
+    if (user.role === 'admin') return true;
+    if (user.role === 'policy_manager') return (user.categories || []).indexOf(p.category) >= 0;
+    return false;
+  };
+  // people a user manages in User Management: admin = everyone; policy manager = only their teams (`manages`, else own team); staff = none
+  App.managedEmployees = (user) => {
+    user = user || App.state.user; if (!user) return [];
+    if (user.role === 'admin') return DB.employees.slice();
+    if (user.role === 'policy_manager') {
+      const teams = (user.manages && user.manages.length) ? user.manages : (user.team ? [user.team] : []);
+      return DB.employees.filter(e => teams.indexOf(e.team) >= 0);
+    }
+    return [];
+  };
+  App.visiblePolicies = user => DB.policies.filter(p => App.canViewPolicy(p, user));
+  // "Active policies" business metric (KPI): admin = all active; policy manager = active in their categories
+  App.activePoliciesInScope = (user) => DB.policies.filter(p => p.status === 'Active' && App.catEnabled(p.category) &&
+    (user.role === 'admin' || (user.categories || []).indexOf(p.category) >= 0));
   App.canSeeComp = () => false;  // compensation removed entirely - not visible to anyone
 
   /* ---------------- CONNECTORS PARKED (picked up ~2 months out) - single version, no editions ----------------
@@ -117,14 +148,20 @@ window.App = (function () {
   App.sourceNouns = () => ['your policies', 'eligibility', 'regulations'];
   App.sourceNounList = () => 'your policy library';
   App.sourceChips = () => `<span class="src-chip policy">${App.icon('shield')} Policies</span>`;
-  // example prompts - policy / BFSI focused (+ role flavour)
+  // example prompts - permission-faithful: only ever suggest questions this user can actually be answered
   App.suggestPrompts = (user) => {
-    user = user || App.state.user; const out = [];
-    out.push({ q:"What's the leave policy?", ic:'shield', tag:'Policy' });
-    if (user.role !== 'user') out.push({ q:'Personal loan eligibility criteria?', ic:'file', tag:'Lending' });
-    out.push({ q:'What if we raise the CIBIL cutoff to 720?', ic:'chart', tag:'Simulate' });
-    out.push({ q:'KYC & AML policy summary', ic:'shield', tag:'Compliance' });
-    out.push(user.role === 'user' ? { q:"What's the travel & expense policy?", ic:'briefcase', tag:'Policy' } : { q:'Two-wheeler LTV rule?', ic:'file', tag:'Lending' });
+    user = user || App.state.user;
+    const vis = App.visiblePolicies(user);
+    const has = (id) => vis.some(p => p.id === id);
+    const out = [];
+    if (has('P-LEAVE'))  out.push({ q:"What's the leave policy?", ic:'shield', tag:'HR' });
+    if (has('P-PL'))     out.push({ q:'Personal loan eligibility criteria?', ic:'file', tag:'Lending' });
+    if (has('P-PL') && App.sim) out.push({ q:'What if we raise the CIBIL cutoff to 720?', ic:'chart', tag:'Simulate' });
+    if (has('P-KYC'))    out.push({ q:'KYC & AML policy summary', ic:'shield', tag:'Compliance' });
+    if (has('P-2W'))     out.push({ q:'Two-wheeler LTV rule?', ic:'file', tag:'Lending' });
+    if (has('P-TRAVEL')) out.push({ q:"What's the travel & expense policy?", ic:'briefcase', tag:'HR' });
+    if (has('P-ISEC'))   out.push({ q:'Information security policy summary', ic:'shield', tag:'Security' });
+    if (out.length < 2)  out.push({ q:'Which policies can I access?', ic:'file', tag:'Policy' });
     return out;
   };
 
@@ -253,7 +290,7 @@ window.App = (function () {
       if (p && !App.catEnabled(p.category)) p = null;  // disabled category → treat as unavailable
       if (p) {
         if (!App.canViewPolicy(p, user)) {
-          return { html:`<p>🔒 <strong>You don't have access to the “${App.esc(p.name)}”.</strong></p><p class="muted" style="margin-top:6px">This policy is scoped to ${App.esc((p.access.teams||[]).concat(p.access.roles||[]).join(', ')||'restricted roles')}. Tara never answers from a source you can't already open - permission is enforced at retrieval, not in the prompt.</p>`,
+          return { html:`<p>🔒 <strong>You don't have access to the “${App.esc(p.name)}”.</strong></p><p class="muted" style="margin-top:6px">It's in the ${App.esc(p.category)} category, which isn't assigned to you. Tara never answers from a source you can't already open - permission is enforced at retrieval, not in the prompt.</p>`,
                    sources:[{kind:'locked',label:p.name+' · no access'}] };
         }
         const facts = Object.entries(p.facts).map(([k,v]) => `<div class="minirow"><span class="muted">${App.esc(k)}</span><span class="spacer" style="flex:1"></span><b>${App.esc(v)}</b></div>`).join('');
@@ -321,17 +358,20 @@ window.App = (function () {
 
   /* ---------------- nav model (role-aware) ---------------- */
   function navModel(user) {
+    // User (staff): Home + the AI tools over their own policies (PolyGPT / RuleSense / BRE Decoder, read-only)
+    // + Company Brain (Policies read-only, My Assessments). No Approvals / Regulatory / InsightGen / admin.
     if (user.role === 'user') {
       return { pinned: [ { id:'dashboard', label:'Home', icon:'home' } ],
         groups: [
-          { title:'Company Brain', items:[ {id:'policies',label:'Policies',icon:'file'}, {id:'polygpt',label:'PolyGPT',icon:'chat'}, {id:'assessments',label:'My Assessments',icon:'clipboard'} ] }
+          { title:'Policy Management', items:[ {id:'polygpt',label:'PolyGPT',icon:'chat'}, {id:'rulesense',label:'RuleSense AI',icon:'code'}, {id:'bredecoder',label:'BRE Decoder',icon:'key'} ] },
+          { title:'Company Brain', items:[ {id:'policies',label:'Policies',icon:'file'}, {id:'assessments',label:'My Assessments',icon:'clipboard'} ] }
         ] };
     }
-    // Ask Tara has no sidebar entry - it's the floating launcher (bottom-right), reachable from anywhere.
-    const pinned = [ { id:'dashboard', label:'Dashboard', icon:'home' } ];
+    // Asking is done from the Home Ask bar - no separate "Ask" nav item and no floating bot button (per PRD).
+    const pinned = [ { id:'dashboard', label:'Home', icon:'home' } ];
     // Company Brain: the policy knowledge surface - Policies live here, alongside Assessments
     const brain = [ { id:'policies', label:'Policies', icon:'file' } ];
-    if (user.role==='policy_manager'||user.role==='admin'||user.role==='assessment_manager') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
+    if (user.role==='policy_manager'||user.role==='admin') brain.push({ id:'assessments', label:'Assessments', icon:'clipboard' });
     const groups = [
       { title:'Policy Management', items: [
         { id:'polygpt', label:'PolyGPT', icon:'chat' },
@@ -343,15 +383,34 @@ window.App = (function () {
       ] },
       { title:'Company Brain', items: brain }
     ];
-    // Administration: ADMIN ONLY. (Connectors parked - picked up ~2 months out.)
+    // Administration: User Management (Users & access) is visible to Admin (whole org) AND Policy Manager
+    // (only the people they manage). Categories stays Admin-only.
     if (user.role==='admin') {
-      const admin = [ { id:'usersaccess', label:'Users & access', icon:'users' },
-        { id:'category', label:'Categories', icon:'layers' } ];
-      groups.push({ title:'Administration', items: admin });
+      groups.push({ title:'Administration', items: [
+        { id:'usersaccess', label:'Users & access', icon:'users' },
+        { id:'category', label:'Categories', icon:'layers' } ] });
+    } else if (user.role==='policy_manager') {
+      groups.push({ title:'Administration', items: [ { id:'usersaccess', label:'Users & access', icon:'users' } ] });
     }
     return { pinned, groups };
   }
   App.navModel = navModel;
+
+  /* ---------------- view-level access (derived from the role's sidebar) ----------------
+     A role may open a view only if it appears in that role's navigation (plus Home and the
+     detail surfaces reached from allowed pages). Everything else renders a locked page. */
+  App.allowedRoutes = (user) => {
+    user = user || App.state.user;
+    const set = { dashboard: 1 };
+    if (!user) return set;
+    const m = navModel(user);
+    m.pinned.forEach(i => set[i.id] = 1);
+    m.groups.forEach(g => g.items.forEach(i => set[i.id] = 1));
+    return set;
+  };
+  App.canAccessView = (route, user) => !!App.allowedRoutes(user)[route];
+  App.lockedPage = (title, msg) => `<div class="page"><div class="page__head"><div><h1>${App.esc(title || 'Restricted')}</h1></div></div>
+    <div class="lock-banner">${App.icon('lock')} <span><strong>You do not have access to this area.</strong> ${App.esc(msg || "It is outside your role's permissions. Ask a workspace admin if you need access.")}</span></div></div>`;
 
   App.renderNav = () => {
     const nav = document.getElementById('navRoot'); if (!nav) return;
@@ -398,7 +457,6 @@ window.App = (function () {
           <main class="content"><div id="viewRoot"></div></main>
         </div>
       </div>
-      <button class="chat-launch" onclick="App.chat.toggle()">${App.icon('sparkles')} Ask Tara</button>
       <aside class="chat-panel" id="chatPanel">
         <div class="chat-head">
           <div class="chat-head__logo">${App.icon('sparkles')}</div>
@@ -452,8 +510,14 @@ window.App = (function () {
     App.renderNav();
     const def = App.views[route];
     const ctx = { user: App.state.user, params: App.state.params };
-    $('#tbTitle').textContent = (typeof def.title==='function'?def.title(ctx):def.title) || '';
     const root = $('#viewRoot');
+    // RBAC gate: block a role from opening a view outside its permissions
+    if (!App.canAccessView(route, App.state.user)) {
+      $('#tbTitle').textContent = 'Restricted';
+      root.innerHTML = App.lockedPage(typeof def.title==='function'?def.title(ctx):def.title);
+      $('.content').scrollTop = 0; return;
+    }
+    $('#tbTitle').textContent = (typeof def.title==='function'?def.title(ctx):def.title) || '';
     try { root.innerHTML = def.render(ctx); if (def.mount) def.mount(root, ctx); }
     catch(err){ root.innerHTML = `<div class="page">${App.ui.empty('alert','View error', String(err))}</div>`; console.error(err); }
     $('.content').scrollTop = 0;
@@ -494,7 +558,7 @@ window.App = (function () {
       const navF = nav.filter(n=>n.label.toLowerCase().includes(l));
       const pplF = q ? ppl.filter(p=>p.label.toLowerCase().includes(l)).slice(0,5) : [];
       let html = '';
-      if (q) html += `<div class="cmdk__sec">Ask Tara</div><div class="cmdk__item" data-act="ask" data-q="${App.esc(q)}">${App.icon('sparkles')}<span>Ask: “${App.esc(q)}”</span><span class="spacer"></span><span class="cmdk__hint">↵</span></div>`;
+      if (q) html += `<div class="cmdk__sec">Ask</div><div class="cmdk__item" data-act="ask" data-q="${App.esc(q)}">${App.icon('sparkles')}<span>Ask: “${App.esc(q)}”</span><span class="spacer"></span><span class="cmdk__hint">↵</span></div>`;
       if (navF.length) html += `<div class="cmdk__sec">Pages</div>` + navF.map(n=>`<div class="cmdk__item" data-act="nav" data-route="${n.route}">${App.icon(n.icon)}<span>${n.label}</span></div>`).join('');
       if (pplF.length) html += `<div class="cmdk__sec">People</div>` + pplF.map(p=>`<div class="cmdk__item" data-act="person" data-id="${p.emp.id}">${App.ui.avatar(p.emp,'sm')}<span>${App.esc(p.label)}</span><span class="spacer"></span><span class="cmdk__hint">${App.esc(p.sub)}</span></div>`).join('');
       if (!html) html = `<div class="cmdk__sec">No matches</div>`;
@@ -531,7 +595,7 @@ window.App = (function () {
   App.logout = () => { App.state.user = null; App.state.chat = []; if (App.tour) App.tour._cleanup(); renderLogin(); };
 
   App.signIn = () => {
-    const rk = { admin:'violet', policy_manager:'blue', risk_approver:'amber', user:'green' };
+    const rk = { admin:'violet', policy_manager:'blue', user:'green' };
     App.openModal({
       title: 'Sign in', sub: 'Use one of the demo accounts below - any password works.',
       body: `
@@ -570,7 +634,7 @@ window.App = (function () {
       a:`<div class="answer-card"><div class="answer-card__h">${App.icon('alert')} RBI/2026-27/58 · suggested changes</div><div class="answer-card__b"><div class="minirow"><span class="muted">Personal Loan · Min CIBIL</span><span class="spacer" style="flex:1"></span><b><span class="diff-del">700</span> → <span class="diff-add">720</span></b></div><div class="minirow"><span class="muted">Personal Loan · Max FOIR</span><span class="spacer" style="flex:1"></span><b><span class="diff-del">55%</span> → <span class="diff-add">50%</span></b></div></div></div>`,
       chips:[{k:'policy',l:'Regulatory · RBI/2026-27/58'}] },
     { persona:'Chirag · Staff', q:'Show me the personal loan policy',
-      a:`<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">It's scoped to Risk &amp; Policy and the Founder's Office. Permission is enforced at retrieval - not in the prompt.</p>`,
+      a:`<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">It's in the Lending category, which staff aren't assigned. Permission is enforced at retrieval - not in the prompt.</p>`,
       chips:[{k:'locked',l:'Personal Loan Policy · no access'}] },
     { persona:'Chirag · Staff', q:"What's the leave policy?",
       a:`<div class="answer-card"><div class="answer-card__h">${App.icon('shield')} Employee Leave Policy · v2.2</div><div class="answer-card__b"><div class="minirow"><span class="muted">Privilege leave</span><span class="spacer" style="flex:1"></span><b>18 / yr</b></div><div class="minirow"><span class="muted">Sick leave</span><span class="spacer" style="flex:1"></span><b>10 / yr</b></div><div class="minirow"><span class="muted">Carry-forward</span><span class="spacer" style="flex:1"></span><b>up to 30 days</b></div></div></div>`,
@@ -610,7 +674,7 @@ window.App = (function () {
   App.scene = {
     boundary(host) {
       const allowed = `<div class="answer-card"><div class="answer-card__h">${App.icon('shield')} Personal Loan Credit Policy · v3.2</div><div class="answer-card__b"><div class="minirow"><span class="muted">Min CIBIL</span><span class="spacer" style="flex:1"></span><b>700</b></div><div class="minirow"><span class="muted">Age band</span><span class="spacer" style="flex:1"></span><b>23–58</b></div><div class="minirow"><span class="muted">Max FOIR</span><span class="spacer" style="flex:1"></span><b>55%</b></div></div></div><div class="src-row"><span class="src-chip policy">${App.icon('shield')} PolicyOS</span></div>`;
-      const denied = `<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">Scoped to Risk &amp; Policy and the Founder's Office - same question, different person, different answer.</p><div class="src-row"><span class="src-chip locked">${App.icon('lock')} no access</span></div>`;
+      const denied = `<p>🔒 <strong>You don't have access to the Personal Loan Credit Policy.</strong></p><p class="muted" style="margin-top:6px;font-size:12.5px">It's in the Lending category, off-limits to staff - same question, different person, different answer.</p><div class="src-row"><span class="src-chip locked">${App.icon('lock')} no access</span></div>`;
       const frames = [{ p:'Sankalp · Admin', ok:true }, { p:'Chirag · Staff', ok:false }];
       let i = 0;
       const step = () => { if (!document.body.contains(host)) return; const f = frames[i % 2];
@@ -678,7 +742,7 @@ window.App = (function () {
             </div>
             <div class="login__chips">${chip('shield','Permission-faithful')}${chip('alert','Regulatory change mgmt')}${chip('sparkles','Bring your own LLM')}</div>
           </div>
-          <div class="landing__demo">${win('loginDemo', '', 'Ask Tara')}</div>
+          <div class="landing__demo">${win('loginDemo', '', 'PolyGPT')}</div>
         </div>
 
         <div class="lp-section" id="lp-how">

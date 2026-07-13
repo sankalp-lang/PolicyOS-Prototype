@@ -7,6 +7,7 @@
 App.registerView('regulatory', {
   title: 'Regulatory',
   render(ctx) {
+    if (!App.canAccessView('regulatory', ctx.user)) return App.lockedPage('Regulatory', 'Regulatory review is for administrators and policy managers.');
     return App.regulatoryView.editor ? App.regulatoryView._renderEditor() : App.regulatoryView._renderList(ctx);
   },
   mount(root) {
@@ -23,13 +24,83 @@ App.regulatoryView = {
   autorun: true,       // ON = every release auto-maps onto the affected policies (populates "Policies to review")
   _amd: {},            // per-release overrides: { decided:'pending'|'in'|'out', removed:{pid:1}, added:[changeObj] }
   _pickWf: null,       // workflow chosen in the send-for-approval dialog
+  _relFilter: { auth: '', month: '' },  // release-feed filters (authority + month)
 
   _refresh() {
     const root = document.getElementById('viewRoot'); if (!root) return;
     const v = App.views['regulatory']; const ctx = { user: App.currentUser() };
     root.innerHTML = v.render(ctx); if (v.mount) v.mount(root, ctx);
   },
-  _canEdit() { const r = App.currentUser().role; return r === 'admin' || r === 'policy_manager' || r === 'risk_approver'; },
+  _canEdit() { const r = App.currentUser().role; return r === 'admin' || r === 'policy_manager'; },
+  // category scope: admin sees every affected policy; a policy manager sees only ones in their categories
+  _inScope(pid) {
+    const u = App.currentUser(); const p = App.policy(pid); if (!u || !p) return false;
+    if (!App.catEnabled(p.category)) return false;
+    if (u.role === 'admin') return true;
+    return (u.categories || []).indexOf(p.category) >= 0;
+  },
+
+  /* ---------------- release feed: category label, sort key, visibility, card ---------------- */
+  _relCategory(a) { return a.source === 'self' ? 'Self-uploaded' : a.regulator; },
+  _dateVal(s) { const M = { Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5, Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11 }; const m = /(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/.exec(s || ''); return m ? (+m[3]) * 372 + (M[m[2]] || 0) * 31 + (+m[1]) : 0; },
+  _visibleRelease(a) {   // informational releases show to everyone; policy-bearing ones only if a change is in the user's scope
+    const ch = this._effectiveChanges(a);
+    if (!ch.length) return true;
+    return ch.some(c => this._inScope(c.policyId));
+  },
+  _relAuthorities() { const seen = {}, out = []; (DB.amendments || []).forEach(a => { if (this._visibleRelease(a)) { const c = this._relCategory(a); if (!seen[c]) { seen[c] = 1; out.push(c); } } }); return out; },
+  _relMonths() { const seen = {}, out = []; (DB.amendments || []).filter(a => this._visibleRelease(a)).slice().sort((x, y) => this._dateVal(y.date) - this._dateVal(x.date)).forEach(a => { const m = /[A-Za-z]{3}\s+\d{4}/.exec(a.date || ''); if (m && !seen[m[0]]) { seen[m[0]] = 1; out.push(m[0]); } }); return out; },
+  _setRelFilter(key, val) { this._relFilter[key] = val; this._refresh(); },
+
+  _relCardHtml(a, canEdit) {
+    const st = this._amdSt(a.id);
+    const pols = this._effectivePolicyIds(a).filter(pid => this._inScope(pid));
+    const chCount = this._effectiveChanges(a).filter(c => this._inScope(c.policyId)).length;
+    const cat = this._relCategory(a);
+    const informational = chCount === 0;
+    const dismissed = !this.autorun && st.decided === 'out';
+    const chips = pols.map(pid => { const p = App.policy(pid);
+      return `<span class="amd-pol${canEdit ? ' amd-pol--rm' : ''}"><button class="amd-pol__open" onclick="App.regulatoryView.openEditor('${pid}')">${App.icon('file')} ${p ? App.esc(p.name) : pid}</button>${canEdit ? `<button class="amd-pol__x" title="Remove this policy from the release" onclick="event.stopPropagation();App.regulatoryView._removePolicy('${a.id}','${pid}')">${App.icon('x')}</button>` : ''}</span>`;
+    }).join('');
+    const addBtn = canEdit ? `<button class="amd-addpol" onclick="App.regulatoryView._addPolicyModal('${a.id}')">${App.icon('plus')} Add policy</button>` : '';
+    let decision = '';
+    if (!this.autorun && canEdit && !informational) {
+      if (st.decided === 'in') decision = `<div class="reg-rel__decide">${App.ui.pill('Moved to review', 'green', true)}<button class="btn btn--sm" onclick="App.regulatoryView._resetDecision('${a.id}')">Undo</button></div>`;
+      else if (st.decided === 'out') decision = `<div class="reg-rel__decide">${App.ui.pill('Dismissed', 'gray', true)}<button class="btn btn--sm" onclick="App.regulatoryView._resetDecision('${a.id}')">Undo</button></div>`;
+      else decision = `<div class="reg-rel__decide"><span class="muted" style="font-size:12px">Move this release into review?</span><button class="btn btn--sm chg-ok" onclick="App.regulatoryView._promote('${a.id}')">${App.icon('check')} Move to review</button><button class="btn btn--sm chg-no" onclick="App.regulatoryView._dismiss('${a.id}')">${App.icon('x')} Dismiss</button></div>`;
+    }
+    const countPill = informational ? App.ui.pill('Informational', 'gray', true) : App.ui.pill(chCount + ' change' + (chCount === 1 ? '' : 's') + ' · ' + pols.length + ' polic' + (pols.length === 1 ? 'y' : 'ies'), 'amber', true);
+    return `<div class="reg-rel${dismissed ? ' is-dismissed' : ''}${!this.autorun && st.decided === 'in' ? ' is-inreview' : ''}" id="regRelRow" data-n="${App.esc((a.title + ' ' + a.ref + ' ' + cat).toLowerCase())}">
+      <div class="reg-rel__h">${App.ui.pill(cat, 'blue')} <button class="reg-rel__title" title="Open circular PDF" onclick="App.pdf.openFull('amendment','${a.id}')">${App.esc(a.title)}</button><span class="muted" style="font-size:12px">· ${App.esc(a.ref)} · ${App.esc(a.date)}</span><div style="flex:1"></div>${countPill}<button class="btn btn--sm" style="margin-left:8px" onclick="App.pdf.openFull('amendment','${a.id}')">${App.icon('file')} View</button></div>
+      <p class="reg-rel__sum">${App.esc(a.summary)}</p>
+      ${informational ? `<div class="muted" style="font-size:12px">No policy changes mapped - open the circular to review for awareness.</div>` : `<div class="reg-rel__pols">${chips}${addBtn}</div>${decision}`}
+    </div>`;
+  },
+  allReleasesModal() {
+    const releases = (DB.amendments || []).filter(a => this._visibleRelease(a)).sort((x, y) => this._dateVal(y.date) - this._dateVal(x.date));
+    const auths = this._relAuthorities();
+    const rows = releases.map(a => { const cat = this._relCategory(a); const chs = this._effectiveChanges(a).filter(c => this._inScope(c.policyId)); const scope = chs.length ? (chs.length + ' change' + (chs.length === 1 ? '' : 's')) : 'Informational';
+      return `<tr class="clickable" data-n="${App.esc((a.title + ' ' + a.ref + ' ' + cat).toLowerCase())}" data-auth="${App.esc(cat)}" onclick="App.pdf.openFull('amendment','${a.id}')">
+        <td><div class="cell-strong" style="color:var(--brand-600)">${App.esc(a.title)}</div><div class="muted" style="font-size:12px">${App.esc(a.summary)}</div></td>
+        <td>${App.ui.pill(cat, 'blue')}</td>
+        <td><span class="mono" style="font-size:12px">${App.esc(a.ref)}</span></td>
+        <td class="muted" style="font-size:12.5px">${App.esc(a.date)}</td>
+        <td>${scope}</td>
+        <td onclick="event.stopPropagation()"><button class="btn btn--sm" onclick="App.pdf.openFull('amendment','${a.id}')">${App.icon('file')} View</button></td>
+      </tr>`; }).join('');
+    App.openModal({
+      title: 'All regulatory uploads', sub: releases.length + ' circulars from regulators and internal uploads', lg: true,
+      body: `<div class="toolbar"><div class="search-input" style="flex:1">${App.icon('search')}<input id="allRelSearch" placeholder="Search circulars…" oninput="App.regulatoryView._filterAllRel()"/></div>
+          <select class="select" id="allRelAuth" onchange="App.regulatoryView._filterAllRel()"><option value="">All authorities</option>${auths.map(x => `<option>${App.esc(x)}</option>`).join('')}</select></div>
+        <div class="table-wrap" style="max-height:58vh;overflow:auto"><table class="tbl"><thead><tr><th>Circular</th><th>Authority</th><th>Reference</th><th>Date</th><th>Scope</th><th>Action</th></tr></thead><tbody id="allRelRows">${rows}</tbody></table></div>`,
+      footer: `<button class="btn" onclick="App.closeModal()">Close</button>`
+    });
+  },
+  _filterAllRel() {
+    const q = ((document.getElementById('allRelSearch') || {}).value || '').toLowerCase();
+    const au = (document.getElementById('allRelAuth') || {}).value || '';
+    document.querySelectorAll('#allRelRows tr').forEach(tr => { tr.style.display = ((!q || (tr.dataset.n || '').indexOf(q) >= 0) && (!au || tr.dataset.auth === au)) ? '' : 'none'; });
+  },
 
   /* ---------------- per-release override state ---------------- */
   _amdSt(id) { if (!this._amd[id]) this._amd[id] = { decided: 'pending', removed: {}, added: [] }; return this._amd[id]; },
@@ -46,7 +117,7 @@ App.regulatoryView = {
   // every suggested change across all releases (respects add/remove, ignores queue inclusion) - drives the editor + stats
   _allChanges() {
     const out = [];
-    (DB.amendments || []).forEach(a => this._effectiveChanges(a).forEach(ch => out.push(Object.assign({}, ch, { amendment: a }))));
+    (DB.amendments || []).forEach(a => this._effectiveChanges(a).forEach(ch => { if (this._inScope(ch.policyId)) out.push(Object.assign({}, ch, { amendment: a })); }));
     return out;
   },
   _changesForPolicy(pid) { return this._allChanges().filter(c => c.policyId === pid); },
@@ -54,7 +125,7 @@ App.regulatoryView = {
   // policies that belong in the "Policies to review" queue (autorun ON = all; OFF = only releases moved in)
   _reviewPolicies() {
     const seen = {}, out = [];
-    (DB.amendments || []).forEach(a => { if (!this._included(a)) return; this._effectivePolicyIds(a).forEach(pid => { if (!seen[pid]) { seen[pid] = 1; out.push(pid); } }); });
+    (DB.amendments || []).forEach(a => { if (!this._included(a)) return; this._effectivePolicyIds(a).forEach(pid => { if (!seen[pid] && this._inScope(pid)) { seen[pid] = 1; out.push(pid); } }); });
     return out;
   },
   _amendmentsForPolicy(pid) { const seen = {}, out = []; this._changesForPolicy(pid).forEach(c => { if (!seen[c.amendment.id]) { seen[c.amendment.id] = 1; out.push(c.amendment); } }); return out; },
@@ -72,7 +143,7 @@ App.regulatoryView = {
   _addPolicyModal(amdId) {
     const a = (DB.amendments || []).find(x => x.id === amdId); if (!a) return;
     const have = {}; this._effectivePolicyIds(a).forEach(pid => have[pid] = 1);
-    const opts = DB.policies.filter(p => !have[p.id] && App.canViewPolicy(p, App.currentUser()));
+    const opts = DB.policies.filter(p => !have[p.id] && App.canEditPolicy(p, App.currentUser()));
     App.openModal({
       title: 'Add an affected policy', sub: a.regulator + ' · ' + a.ref + ' - pick a policy this release should also touch.',
       body: opts.length ? `<div class="reg-picklist">${opts.map(p => `<button class="reg-pick" onclick="App.regulatoryView._addPolicy('${amdId}','${p.id}')">${App.icon('file')}<div style="flex:1;text-align:left"><b>${App.esc(p.name)}</b><div class="muted" style="font-size:12px">${App.esc(p.category)} · ${App.esc(p.sub)}</div></div>${App.icon('plus')}</button>`).join('')}</div>`
@@ -110,30 +181,15 @@ App.regulatoryView = {
     const stat = (n, label, ic) => `<div class="reg-stat"><div class="reg-stat__ic">${App.icon(ic)}</div><div><div class="reg-stat__n">${n}</div><div class="reg-stat__l">${label}</div></div></div>`;
 
     const canEdit = this._canEdit();
-    const rel = (DB.amendments || []).map(a => {
-      const st = this._amdSt(a.id);
-      const pols = this._effectivePolicyIds(a);
-      const chCount = this._effectiveChanges(a).length;
-      const included = this._included(a);
-      const dismissed = !this.autorun && st.decided === 'out';
-      const chips = pols.map(pid => { const p = App.policy(pid);
-        return `<span class="amd-pol${canEdit ? ' amd-pol--rm' : ''}"><button class="amd-pol__open" onclick="App.regulatoryView.openEditor('${pid}')">${App.icon('file')} ${p ? App.esc(p.name) : pid}</button>${canEdit ? `<button class="amd-pol__x" title="Remove this policy from the release" onclick="event.stopPropagation();App.regulatoryView._removePolicy('${a.id}','${pid}')">${App.icon('x')}</button>` : ''}</span>`;
-      }).join('');
-      const addBtn = canEdit ? `<button class="amd-addpol" onclick="App.regulatoryView._addPolicyModal('${a.id}')">${App.icon('plus')} Add policy</button>` : '';
-      // decision row appears only when auto-mapping is OFF
-      let decision = '';
-      if (!this.autorun && canEdit) {
-        if (st.decided === 'in') decision = `<div class="reg-rel__decide">${App.ui.pill('Moved to review', 'green', true)}<button class="btn btn--sm" onclick="App.regulatoryView._resetDecision('${a.id}')">Undo</button></div>`;
-        else if (st.decided === 'out') decision = `<div class="reg-rel__decide">${App.ui.pill('Dismissed', 'gray', true)}<button class="btn btn--sm" onclick="App.regulatoryView._resetDecision('${a.id}')">Undo</button></div>`;
-        else decision = `<div class="reg-rel__decide"><span class="muted" style="font-size:12px">Move this release into review?</span><button class="btn btn--sm chg-ok" onclick="App.regulatoryView._promote('${a.id}')">${App.icon('check')} Move to review</button><button class="btn btn--sm chg-no" onclick="App.regulatoryView._dismiss('${a.id}')">${App.icon('x')} Dismiss</button></div>`;
-      }
-      return `<div class="reg-rel${dismissed ? ' is-dismissed' : ''}${!this.autorun && st.decided === 'in' ? ' is-inreview' : ''}" id="regRelRow" data-n="${App.esc((a.title + ' ' + a.ref + ' ' + a.regulator).toLowerCase())}">
-        <div class="reg-rel__h">${App.ui.pill(a.regulator, 'blue')} <b>${App.esc(a.title)}</b><span class="muted" style="font-size:12px">· ${App.esc(a.ref)} · ${App.esc(a.date)}</span><div style="flex:1"></div>${App.ui.pill(chCount + ' change' + (chCount === 1 ? '' : 's') + ' · ' + pols.length + ' polic' + (pols.length === 1 ? 'y' : 'ies'), 'amber', true)}</div>
-        <p class="reg-rel__sum">${App.esc(a.summary)}</p>
-        <div class="reg-rel__pols">${chips}${addBtn}</div>
-        ${decision}
-      </div>`;
-    }).join('');
+    // release feed: visible → filtered (authority + month) → sorted by date desc → first 10 shown, rest behind "see previous"
+    const feed = (DB.amendments || []).filter(a => this._visibleRelease(a))
+      .filter(a => !this._relFilter.auth || this._relCategory(a) === this._relFilter.auth)
+      .filter(a => !this._relFilter.month || (a.date || '').indexOf(this._relFilter.month) >= 0)
+      .sort((x, y) => this._dateVal(y.date) - this._dateVal(x.date));
+    const PAGE = 10;
+    const shownFeed = feed.slice(0, PAGE);
+    const moreCount = feed.length - shownFeed.length;
+    const rel = shownFeed.map(a => this._relCardHtml(a, canEdit)).join('');
 
     const polRows = review.map(pid => {
       const p = App.policy(pid); const chs = this._changesForPolicy(pid); const amds = this._amendmentsForPolicy(pid);
@@ -151,7 +207,7 @@ App.regulatoryView = {
         ${this._canEdit() ? `<button class="btn" onclick="App.regulatoryView._auditModal()">${App.icon('clipboard')} Audit log</button> <button class="btn btn--primary" onclick="App.regulatoryView.uploadModal()">${App.icon('download')} Upload circular</button>` : ''}</div>
       <div class="info-banner">${App.icon('shield')} <span>One release can affect several policies, and one policy can collect changes from several releases. Approving a change edits the draft on the right - nothing is auto-filed; you download the signed PDF into your own approval workflow.</span></div>
       <div class="reg-stats">
-        ${stat((DB.amendments || []).length, 'new releases', 'alert')}
+        ${stat((DB.amendments || []).filter(a => this._visibleRelease(a)).length, 'new releases', 'alert')}
         ${stat(affected.length, 'policies affected', 'file')}
         ${stat(all.length, 'suggested changes', 'edit')}
         ${stat(resolved, 'reviewed', 'check')}
@@ -165,8 +221,18 @@ App.regulatoryView = {
           <button class="switch${this.autorun ? ' is-on' : ''}" role="switch" aria-checked="${this.autorun}" title="${this.autorun ? 'On - releases map onto policies automatically' : 'Off - you decide which releases enter review'}" onclick="App.regulatoryView._toggleAutorun()"><span class="switch__dot"></span></button>` : ''}
       </div>
       ${canEdit && !this.autorun ? `<div class="info-banner" style="margin-top:0">${App.icon('info')} <span>Auto-mapping is <strong>off</strong>. Tick <strong>Move to review</strong> on a release to send its policies to the queue above, or <strong>Dismiss</strong> to skip it. You can also add or remove the affected policies on any release.</span></div>` : ''}
-      <div class="toolbar"><div class="search-input">${App.icon('search')}<input id="regSearch" placeholder="Search releases…"/></div></div>
-      ${rel}
+      <div class="toolbar">
+        <div class="search-input" style="flex:1">${App.icon('search')}<input id="regSearch" placeholder="Search releases…"/></div>
+        <select class="select" onchange="App.regulatoryView._setRelFilter('auth', this.value)">
+          <option value="">All authorities</option>${this._relAuthorities().map(x => `<option${this._relFilter.auth === x ? ' selected' : ''}>${App.esc(x)}</option>`).join('')}
+        </select>
+        <select class="select" onchange="App.regulatoryView._setRelFilter('month', this.value)">
+          <option value="">All dates</option>${this._relMonths().map(x => `<option${this._relFilter.month === x ? ' selected' : ''}>${App.esc(x)}</option>`).join('')}
+        </select>
+        ${(this._relFilter.auth || this._relFilter.month) ? `<button class="btn btn--sm" onclick="App.regulatoryView._relFilter={auth:'',month:''};App.regulatoryView._refresh()">Clear</button>` : ''}
+      </div>
+      ${rel.trim() ? rel : App.ui.empty('alert', 'No matching releases', 'Try clearing the authority or date filter.')}
+      ${moreCount > 0 ? `<div style="text-align:center;margin-top:6px"><button class="btn" onclick="App.regulatoryView.allReleasesModal()">${App.icon('clock')} See previous uploads (${moreCount} more)</button></div>` : ''}
     </div>`;
   },
 
@@ -427,7 +493,8 @@ App.regulatoryView = {
           <div style="font-weight:600;margin-top:8px">Drop a circular PDF here, or pick a recent release</div>
           <div class="muted" style="font-size:12.5px;margin-top:3px">PDF · parsed and matched to your policy library</div></div>
         <div class="setup-label" style="margin-top:16px">Recent releases</div>
-        <div id="upPick" class="reg-picklist">${(DB.amendments || []).map(a => `<button class="reg-pick" onclick="App.closeModal();App.regulatoryView.openEditor('${a.changes[0].policyId}')">${App.icon('alert')}<div style="flex:1;text-align:left"><b>${App.esc(a.title)}</b><div class="muted" style="font-size:12px">${App.esc(a.regulator)} · ${App.esc(a.ref)} · ${a.changes.length} change${a.changes.length === 1 ? '' : 's'}</div></div>${App.icon('arrow')}</button>`).join('')}</div>`,
+        <div id="upPick" class="reg-picklist">${(DB.amendments || []).slice().sort((x, y) => this._dateVal(y.date) - this._dateVal(x.date)).slice(0, 8).map(a => { const first = (a.changes && a.changes[0]) ? a.changes[0].policyId : null; const act = first ? `App.closeModal();App.regulatoryView.openEditor('${first}')` : `App.pdf.openFull('amendment','${a.id}')`; const n = (a.changes || []).length;
+          return `<button class="reg-pick" onclick="${act}">${App.icon('alert')}<div style="flex:1;text-align:left"><b>${App.esc(a.title)}</b><div class="muted" style="font-size:12px">${App.esc(this._relCategory(a))} · ${App.esc(a.ref)} · ${n ? n + ' change' + (n === 1 ? '' : 's') : 'informational'}</div></div>${App.icon('arrow')}</button>`; }).join('')}</div>`,
       footer: `<button class="btn" onclick="App.closeModal()">Close</button>`
     });
   }

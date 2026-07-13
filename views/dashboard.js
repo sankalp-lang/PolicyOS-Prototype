@@ -9,8 +9,22 @@ App.registerView('dashboard', {
         <div class="kpi__icon" style="background:${color}1a;color:${color}">${App.icon(icon)}</div></div>
         <div class="kpi__val">${val}</div>${sub ? `<div class="kpi__sub muted">${sub}</div>` : ''}</div>`;
 
-    const visPolicies = App.visiblePolicies(u).length;
-    const regGaps = (DB.circulars || []).filter(c => c.suggestion && c.status !== 'Actioned').length;
+    const visPolicies = App.visiblePolicies(u).length;                 // policies this user can access (User KPI)
+    const activePolicies = App.activePoliciesInScope(u).length;        // active policies in scope (Admin=all, PM=their categories)
+    // regulatory gaps = affected policies in the user's scope (Admin=all, PM=their categories)
+    const regGaps = (function () {
+      if (!DB.amendments) return (DB.circulars || []).filter(c => c.suggestion && c.status !== 'Actioned').length;
+      const seen = {}; let n = 0;
+      DB.amendments.forEach(a => (a.changes || []).forEach(ch => {
+        const p = App.policy(ch.policyId); if (!p) return;
+        if ((u.role === 'admin' || (u.categories || []).indexOf(p.category) >= 0) && !seen[ch.policyId]) { seen[ch.policyId] = 1; n++; }
+      }));
+      return n;
+    })();
+    // approvals scoped: Admin sees all pending; Policy Manager (maker) sees the ones they raised
+    const scopedApprovals = u.role === 'admin' ? DB.approvals : DB.approvals.filter(a => a.requestedBy === u.id);
+    const pendCount = scopedApprovals.length;
+    const highCount = scopedApprovals.filter(a => a.priority === 'High').length;
 
     // front door: a single centered Ask-Tara command bar (everyone)
     const fn = u.name.split(' ')[0];
@@ -44,37 +58,49 @@ App.registerView('dashboard', {
           <div class="card"><div class="card__head"><h3>Quick knowledge</h3></div><div class="card__body" style="padding:6px 18px">
             <div class="minirow" style="cursor:pointer" onclick="App.chat.toggle(true);App.chat.ask('What\\'s the leave policy?')">${App.icon('shield')}<span style="flex:1">Leave policy</span>${App.icon('arrow')}</div>
             <div class="minirow" style="cursor:pointer" onclick="App.chat.toggle(true);App.chat.ask('Travel and expense policy?')">${App.icon('briefcase')}<span style="flex:1">Travel &amp; expense</span>${App.icon('arrow')}</div>
-            <div class="minirow" style="cursor:pointer" onclick="App.chat.toggle(true);App.chat.ask('KYC and AML policy summary')">${App.icon('shield')}<span style="flex:1">KYC &amp; AML</span>${App.icon('arrow')}</div>
+            <div class="minirow" style="cursor:pointer" onclick="App.chat.toggle(true);App.chat.ask('Information security policy summary')">${App.icon('shield')}<span style="flex:1">Information security</span>${App.icon('arrow')}</div>
           </div></div>
         </div></div>`;
     }
 
-    // manager / admin / risk - quick actions to the core features
-    const actionCards = [
-      { ic: 'alert', c: '#a8553a', t: 'Regulatory', s: regGaps + ' gap' + (regGaps === 1 ? '' : 's') + ' to review', r: 'regulatory' },
-      { ic: 'chat', c: '#3a7479', t: 'PolyGPT', s: 'Ask your policies', r: 'polygpt' },
-      { ic: 'branch', c: '#5e4d83', t: 'Approvals', s: DB.approvals.length + ' pending', r: 'approvals' },
-      { ic: 'chart', c: '#3f7a57', t: 'InsightGen', s: 'Ask your data', r: 'insightgen' }
-    ];
-    const pendingApprovals = DB.approvals.slice(0, 3);
+    // Admin / Policy Manager - quick actions (role-specific, per RBAC PRD; InsightGen is NOT a quick action)
+    const actionCards = u.role === 'admin'
+      ? [
+          { ic: 'users',  c: '#2f49c4', t: 'User Management', s: 'People & access', r: 'usersaccess' },
+          { ic: 'layers', c: '#5e4d83', t: 'Categories', s: 'Policy taxonomy', r: 'category' },
+          { ic: 'branch', c: '#3a7479', t: 'Approvals', s: pendCount + ' pending', r: 'approvals' },
+          { ic: 'alert',  c: '#a8553a', t: 'Regulatory', s: regGaps + ' gap' + (regGaps === 1 ? '' : 's') + ' to review', r: 'regulatory' }
+        ]
+      : [
+          { ic: 'alert',  c: '#a8553a', t: 'Regulatory', s: regGaps + ' gap' + (regGaps === 1 ? '' : 's') + ' to review', r: 'regulatory' },
+          { ic: 'chat',   c: '#3a7479', t: 'PolyGPT', s: 'Ask your policies', r: 'polygpt' },
+          { ic: 'branch', c: '#5e4d83', t: 'Approvals', s: pendCount + ' pending', r: 'approvals' }
+        ];
+    const gridN = actionCards.length;
+    const pendingApprovals = scopedApprovals.slice(0, 3);
+    // quick links: fast hops to the tools NOT already in the top quick actions (four per role; InsightGen stays sidebar-only)
+    const quickLinks = u.role === 'admin'
+      ? [ ['file', 'Policies', 'policies'], ['chat', 'PolyGPT', 'polygpt'], ['code', 'RuleSense AI', 'rulesense'], ['clipboard', 'Assessments', 'assessments'] ]
+      : [ ['file', 'Policies', 'policies'], ['code', 'RuleSense AI', 'rulesense'], ['key', 'BRE Decoder', 'bredecoder'], ['clipboard', 'Assessments', 'assessments'] ];
+    const apprEmpty = App.ui.empty('branch', u.role === 'admin' ? 'No approvals pending' : 'Nothing awaiting you', u.role === 'admin' ? 'New requests will appear here.' : 'Changes you raise will show here with their status.');
     return `<div class="page">${hero}
-      <div class="grid grid-4" style="margin-bottom:18px">
+      <div class="grid grid-${gridN}" style="margin-bottom:18px">
         ${actionCards.map(a => `<button class="actioncard" onclick="App.navigate('${a.r}')"><div class="actioncard__ic" style="background:${a.c}1a;color:${a.c}">${App.icon(a.ic)}</div><div><b>${a.t}</b><span>${a.s}</span></div></button>`).join('')}
       </div>
       <div class="grid grid-4" style="margin-bottom:18px">
-        ${kpi('file', '#2f49c4', 'Active policies', visPolicies, 'visible to you')}
-        ${kpi('branch', '#5e4d83', 'Pending approvals', DB.approvals.length, '2 high priority')}
+        ${kpi('file', '#2f49c4', 'Active policies', activePolicies, u.role === 'admin' ? 'across the org' : 'in your categories')}
+        ${kpi('branch', '#5e4d83', 'Pending approvals', pendCount, u.role === 'admin' ? (highCount + ' high priority') : 'you raised')}
         ${kpi('clipboard', '#3a7479', 'Avg assessment score', '78%', '+4% vs last quarter')}
         ${kpi('alert', '#a8553a', 'Regulatory gaps', regGaps, 'awaiting review')}
       </div>
       <div class="grid grid-2">
         <div class="card"><div class="card__head"><h3>Pending approvals</h3><div class="spacer"></div><button class="btn btn--sm" onclick="App.navigate('approvals')">View all</button></div>
           <div class="card__body" style="padding:6px 18px">
-            ${pendingApprovals.map(a => { const by = App.emp(a.requestedBy); return `<div class="minirow" style="cursor:pointer" onclick="App.navigate('approvals')"><div style="flex:1"><b style="font-weight:600">${App.esc(a.name)}</b><div class="muted" style="font-size:12px">${App.esc(by.name)} · ${a.on}</div></div>${App.ui.pill(a.priority, a.priority === 'High' ? 'red' : 'amber')}</div>`; }).join('')}
+            ${pendingApprovals.length ? pendingApprovals.map(a => { const by = App.emp(a.requestedBy); return `<div class="minirow" style="cursor:pointer" onclick="App.navigate('approvals')"><div style="flex:1"><b style="font-weight:600">${App.esc(a.name)}</b><div class="muted" style="font-size:12px">${by ? App.esc(by.name) : ''} · ${a.on}</div></div>${App.ui.pill(a.priority, a.priority === 'High' ? 'red' : 'amber')}</div>`; }).join('') : apprEmpty}
           </div></div>
-        <div class="card"><div class="card__head"><h3>Recent attestations</h3></div>
+        <div class="card"><div class="card__head"><h3>Quick links</h3></div>
           <div class="card__body" style="padding:6px 18px">
-            ${[['KYC & AML Awareness', '41/64'], ['Personal Loan Quiz', '12/18'], ['Leave Policy Onboarding', '12/12']].map(r => `<div class="minirow"><div style="flex:1"><b style="font-weight:600">${r[0]}</b><div class="muted" style="font-size:12px">Attested ${r[1]}</div></div><button class="btn btn--sm">Remind</button></div>`).join('')}
+            ${quickLinks.map(l => `<div class="minirow" style="cursor:pointer" onclick="App.navigate('${l[2]}')">${App.icon(l[0])}<span style="flex:1">${l[1]}</span>${App.icon('arrow')}</div>`).join('')}
           </div></div>
       </div>
     </div>`;

@@ -2,6 +2,7 @@
 App.registerView('bredecoder', {
   title: 'BRE Decoder',
   render(ctx) {
+    if (!App.canAccessView('bredecoder', ctx.user)) return App.lockedPage('BRE Decoder', 'BRE Decoder is for administrators and policy managers.');
     // initialise / reset state for this view
     App.state.bredecoder = {
       phase: 'idle',                 // 'idle' | 'generating' | 'done'

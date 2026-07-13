@@ -329,16 +329,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:13.5px; }
 .empty__ic .ico { width:22px;height:22px; }
 .empty b { color:var(--ink-2); display:block; font-size:14px; margin-bottom:4px; font-weight:600; }
 
-/* ===================== CHAT / TARA ===================== */
-.chat-launch {
-  position:fixed; right:26px; bottom:26px; z-index:60;
-  display:flex; align-items:center; gap:9px; padding:11px 18px 11px 15px; border-radius:999px;
-  background:var(--ink); color:#f6f4ef; border:none;
-  box-shadow: 0 10px 30px rgba(28,26,22,.28); font-weight:500; font-size:14px; transition:.18s;
-}
-.chat-launch:hover { transform:translateY(-2px); background:#000; }
-.chat-launch .ico { width:18px;height:18px; color:var(--brand-400); }
-
+/* ===================== CHAT PANEL (opened from the Home ask bar; no floating launcher) ===================== */
 .chat-panel {
   position:fixed; right:0; top:0; height:100%; width:440px; max-width:94vw; z-index:70;
   background:var(--surface); border-left:1px solid var(--line); box-shadow:var(--shadow-lg);
@@ -844,3 +835,36 @@ pre.code .k{color:#b3a7e0;} pre.code .s{color:#9cc7a6;} pre.code .c{color:#8a847
 
 /* code & SQL use the number/symbol font, never the serif */
 code, pre, .code { font-family: var(--font-mono); }
+
+/* ---------------- PolyGPT threads rail (collapsed icons → hover-expanded conversations, as in production) ---------------- */
+.pg-rail { width:54px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; padding:4px 0; overflow:hidden; transition:width .25s ease; }
+.pg-rail.is-open { width:250px; }
+.pg-rail__lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0; max-width:0; transition:opacity .2s ease .05s, max-width .25s ease; }
+.pg-rail.is-open .pg-rail__lbl { opacity:1; max-width:180px; }
+.pg-rail__new { display:flex; align-items:center; gap:8px; height:38px; padding:0 10px; border-radius:10px; border:1px solid var(--brand-600); background:var(--brand-600); color:#fff; cursor:pointer; font:inherit; font-size:13px; font-weight:600; flex-shrink:0; }
+.pg-rail__new .ico { flex-shrink:0; }
+.pg-rail__head { margin:8px 0 0; padding:0 12px; overflow:hidden; }
+.pg-rail__list { display:flex; flex-direction:column; gap:2px; overflow-y:auto; overflow-x:hidden; }
+.pg-rail__item { display:flex; align-items:center; gap:8px; min-height:34px; padding:0 10px; border-radius:9px; border:none; background:none; color:var(--ink-2); cursor:pointer; font:inherit; font-size:12.5px; text-align:left; flex-shrink:0; }
+.pg-rail__item:hover { background:var(--surface-2); }
+.pg-rail__item .ico { width:15px; height:15px; flex-shrink:0; color:var(--muted); }
+.pg-thread.is-cur { background:var(--brand-50); color:var(--brand-600); font-weight:600; }
+.pg-thread.is-cur .ico { color:var(--brand-600); }
+.pg-rail__empty { padding:4px 12px; overflow:hidden; }
+
+/* attached policy "file" chips with page citations */
+.pg-file { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-2); background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px 9px; }
+.pg-file .ico { width:12px; height:12px; color:var(--muted); }
+
+/* dislike feedback reason picker */
+.pg-fb { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; padding:9px 11px; border:1px dashed var(--line); border-radius:10px; background:var(--surface-2); }
+.pg-fb.is-done { border-style:solid; background:var(--green-50); border-color:#bcd3c2; }
+
+/* compact select (row-level version picker) + green view action button (Policy Management) */
+.select--sm { height:30px; padding:2px 26px 2px 10px; font-size:12.5px; border-radius:8px; }
+.btn--icon-ok { background:var(--green-600); border-color:var(--green-600); color:#fff; padding:6px 9px; }
+.btn--icon-ok:hover { background:var(--green-700); border-color:var(--green-700); }
+.btn--icon-ok .ico { width:16px; height:16px; }
+
+.reg-rel__title { background:none; border:none; font:inherit; font-weight:700; color:var(--ink); cursor:pointer; padding:0; }
+.reg-rel__title:hover { color:var(--brand-600); text-decoration:underline; }
